@@ -4,7 +4,7 @@
 
 Local browser UI for the [pi coding agent](https://github.com/earendil-works/pi). Pi Web uses the same local configuration and session files as pi, so you can browse and resume conversations, run agent turns, configure models and resources, and inspect project files from a browser.
 
-![Annotated Pi Web interface showing inline threads, session navigation, project files, and the built-in web browser](https://raw.githubusercontent.com/agegr/pi-web/main/docs/screenshot-annotated.png)
+![Annotated Pi Web interface showing inline threads, session navigation, project files, and the built-in web browser](https://raw.githubusercontent.com/tongdu99/pi-web/main/docs/screenshot-annotated.png)
 
 ## Features
 
