@@ -23,7 +23,7 @@ import { useAudio } from "@/hooks/useAudio";
 import type { AttachState } from "@/hooks/useAgentSession";
 import { copyText } from "@/lib/clipboard";
 import { getFileName } from "@/lib/file-paths";
-import { getWebUrlLabel } from "@/lib/web-url";
+import { getWebUrlLabel, normalizeWebUrl } from "@/lib/web-url";
 import { buildAtMentionText, buildFileAtMentionsText, buildFileLineMentionText } from "@/lib/file-fuzzy";
 import {
   claimExtensionAttentionNotification,
@@ -895,29 +895,54 @@ export function AppShell() {
   }, [isMobile, selectedSession?.id]);
 
   const handleOpenWebUrl = useCallback((url: string) => {
-    const id = typeof crypto.randomUUID === "function"
-      ? crypto.randomUUID()
-      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-    const tabId = `web:${id}`;
-    setFileTabs((tabs) => [...tabs, {
-      id: tabId,
-      label: url ? getWebUrlLabel(url) : translate("web.newTab"),
-      filePath: "",
-      kind: "web",
-      url,
-    }]);
-    setActiveFileTabId(tabId);
+    // Links are usually already normalized, but normalize here too so opening
+    // `example.com` and `https://example.com/` selects the same tab.
+    const normalizedUrl = normalizeWebUrl(url) ?? url;
+    const existingTab = normalizedUrl
+      ? fileTabs.find((tab) => (
+        tab.kind === "web" && normalizeWebUrl(tab.url ?? "") === normalizedUrl
+      ))
+      : undefined;
+
+    if (existingTab) {
+      setActiveFileTabId(existingTab.id);
+    } else {
+      const id = typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+      const tabId = `web:${id}`;
+      setFileTabs((tabs) => [...tabs, {
+        id: tabId,
+        label: normalizedUrl ? getWebUrlLabel(normalizedUrl) : translate("web.newTab"),
+        filePath: "",
+        kind: "web",
+        url: normalizedUrl,
+      }]);
+      setActiveFileTabId(tabId);
+    }
     setRightPanelOpen(true);
     if (isMobile) setSidebarOpen(false);
-  }, [isMobile, translate]);
+  }, [fileTabs, isMobile, translate]);
 
   const handleNewWebTab = useCallback(() => handleOpenWebUrl(""), [handleOpenWebUrl]);
 
   const handleWebNavigate = useCallback((tabId: string, url: string, label: string) => {
+    const normalizedUrl = normalizeWebUrl(url) ?? url;
+    const existingTab = normalizedUrl
+      ? fileTabs.find((tab) => (
+        tab.id !== tabId
+        && tab.kind === "web"
+        && normalizeWebUrl(tab.url ?? "") === normalizedUrl
+      ))
+      : undefined;
+    if (existingTab) {
+      setActiveFileTabId(existingTab.id);
+      return;
+    }
     setFileTabs((tabs) => tabs.map((tab) => (
-      tab.id === tabId ? { ...tab, url, label } : tab
+      tab.id === tabId ? { ...tab, url: normalizedUrl, label } : tab
     )));
-  }, []);
+  }, [fileTabs]);
 
   const handleCloseFileTab = useCallback((tabId: string) => {
     setFileTabs((prev) => {
@@ -2382,19 +2407,25 @@ export function AppShell() {
           </button>
         </div>
 
-        {/* Only the active viewer is mounted. File-tab state is restored on activation. */}
+        {/* Keep web viewers mounted while inactive so switching tabs does not reload them. */}
         <div style={{ flex: 1, overflow: "hidden", paddingBottom: "env(safe-area-inset-bottom)" }}>
+          {fileTabs.filter((tab) => tab.kind === "web").map((tab) => (
+            <div
+              key={tab.id}
+              aria-hidden={tab.id !== activeFileTabId}
+              style={{ height: "100%", display: tab.id === activeFileTabId ? "block" : "none" }}
+            >
+              <WebViewer
+                url={tab.url ?? ""}
+                onNavigate={(url, label) => handleWebNavigate(tab.id, url, label)}
+              />
+            </div>
+          ))}
           {activeFileTab?.kind === "system" ? (
             <div style={{ height: "100%", overflowY: "auto", padding: "14px 16px", color: "var(--text-muted)", fontSize: 12, lineHeight: 1.6, whiteSpace: "pre-wrap", fontFamily: "var(--font-mono)" }}>
               {systemPrompt ?? (systemPromptLoading ? translate("system.loading") : translate("system.load"))}
               {systemPrompt === "" && translate("system.empty")}
             </div>
-          ) : activeFileTab?.kind === "web" ? (
-            <WebViewer
-              key={activeFileTab.id}
-              url={activeFileTab.url ?? ""}
-              onNavigate={(url, label) => handleWebNavigate(activeFileTab.id, url, label)}
-            />
           ) : activeFileTab?.filePath ? (
             <FileViewer
               key={`${activeFileTab.id}:${activeFileTab.viewerRevision ?? 0}`}
