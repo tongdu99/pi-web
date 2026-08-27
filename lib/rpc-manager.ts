@@ -25,7 +25,12 @@ import type {
   SessionMessageEntry,
 } from "./types";
 import { createHeadlessCustomUiTui, DEFAULT_CUSTOM_UI_COLUMNS, type HeadlessCustomUiTui } from "./custom-ui-terminal";
-import { DISCUSSION_THREAD_CUSTOM_TYPE, threadTitleFromMarkdown } from "./discussion-threads";
+import {
+  DISCUSSION_THREAD_CUSTOM_TYPE,
+  openRestoredSessionOnMain,
+  threadTitleFromMarkdown,
+  type RestorableLeafSessionManager,
+} from "./discussion-threads";
 
 // ============================================================================
 // Types
@@ -1922,6 +1927,33 @@ export function notifyRunningChange(): void {
 }
 
 /**
+ * Point a restored session at its main conversation.
+ *
+ * `SessionManager` rebuilds its leaf from the last line of the JSONL file, so a
+ * session whose most recent activity happened inside a pi-web discussion thread
+ * comes back alive *inside that thread*. Everything downstream then follows the
+ * side discussion: the agent's restored context is the thread branch, new
+ * prompts are appended to it, and `GET /api/sessions/[id]` reports the thread
+ * leaf for a live session, which snaps the browser into thread view (composer
+ * included) after the next run — even when the run was a slash command the user
+ * cancelled.
+ *
+ * Only the leaf restored from disk is corrected. A thread entered during the
+ * session's lifetime is a deliberate `navigate_tree` and must stay selected.
+ */
+function openOnMainConversation(sessionManager: SessionManager): void {
+  try {
+    openRestoredSessionOnMain(sessionManager as unknown as RestorableLeafSessionManager);
+  } catch (error) {
+    // Never block session start over leaf placement.
+    console.error(
+      "[pi-web] failed to restore the main conversation leaf:",
+      error instanceof Error ? error.message : error,
+    );
+  }
+}
+
+/**
  * Get or create an AgentSession for the given session.
  * For new sessions (sessionFile === ""), pi generates its own id.
  * New sessions resolve enabledModels before construction so the initial model,
@@ -1958,6 +1990,7 @@ export async function startRpcSession(
     if (!cwd) throw new Error("cwd is required for a new session");
     sessionManager = SessionManager.create(cwd, undefined);
   }
+  openOnMainConversation(sessionManager);
   const sessionCwd = sessionManager.getCwd();
   const finishStartingSession = trackStartingSession(sessionCwd);
   const starting = (async () => {

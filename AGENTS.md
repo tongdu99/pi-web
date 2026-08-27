@@ -132,6 +132,9 @@ The client follows via `case "session_switch"` in `useAgentSession` → `onSessi
 - **Fork** (Fork button on user message): creates a new independent `.jsonl` file. Shown as a child in the sidebar tree via `parentSession` header field.
 - **In-session branch** (Continue button / BranchNavigator): calls `navigate_tree` within the same file. Multiple entries share the same `parentId`. Switching between them calls `/api/sessions/[id]/context?leafId=`.
 
+### Restored leaves and discussion threads
+`SessionManager` rebuilds its leaf from the **last line of the JSONL file**, which may sit inside a `pi-web.thread` side discussion. A session that comes back alive there restores the thread branch as agent context, appends new prompts to it, and — because `GET /api/sessions/[id]` trusts `sm.getLeafId()` for live sessions — snaps the browser into thread view (composer included) on the next `loadSession()`. `startRpcSession()` therefore calls `openOnMainConversation()` (→ `openRestoredSessionOnMain()` in `lib/discussion-threads.ts`) before building the AgentSession. Only the disk-restored leaf is corrected; a thread entered later is a deliberate `navigate_tree` and stays selected.
+
 ### Session files can be fully rewritten
 `parentSession` in the header is **display metadata only** — has zero effect on chat content. Safe to `writeFileSync` the entire file (pi does this itself during migrations). Used when cascade-reparenting children on delete.
 

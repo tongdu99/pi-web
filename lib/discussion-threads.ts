@@ -140,6 +140,32 @@ export function resolveInactiveSessionLeafId(
   return activeThread ? resolveThreadMainLeafId(tree, activeThread) : leafId;
 }
 
+/** The `SessionManager` surface needed to reposition a restored leaf. */
+export interface RestorableLeafSessionManager {
+  getLeafId(): string | null;
+  getTree(): SessionTreeNode[];
+  branch(entryId: string): void;
+}
+
+/**
+ * Move a session that was just restored from disk off a discussion thread.
+ *
+ * pi rebuilds the leaf from the last line of the JSONL file, so a session whose
+ * most recent activity happened inside a thread comes back alive *inside* that
+ * thread: the agent's restored context is the side discussion, new prompts are
+ * appended to it, and the browser is told the live leaf is a thread leaf.
+ *
+ * Returns the leaf the session points at afterwards.
+ */
+export function openRestoredSessionOnMain(manager: RestorableLeafSessionManager): string | null {
+  const restoredLeafId = manager.getLeafId();
+  if (!restoredLeafId) return restoredLeafId;
+  const mainLeafId = resolveInactiveSessionLeafId(manager.getTree(), restoredLeafId);
+  if (!mainLeafId || mainLeafId === restoredLeafId) return restoredLeafId;
+  manager.branch(mainLeafId);
+  return mainLeafId;
+}
+
 function findNode(tree: SessionTreeNode[], entryId: string): SessionTreeNode | null {
   const stack = [...tree];
   let contracted: SessionTreeNode | null = null;
