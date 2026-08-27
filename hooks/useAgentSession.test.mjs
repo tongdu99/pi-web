@@ -107,7 +107,7 @@ test("opening System lazily starts a dormant session without sending a prompt", 
   assert.match(loadSystemPromptSource, /setSystemPrompt\(state\.systemPrompt \?\? ""\)/);
   assert.match(loaderEffectSource, /onSystemPromptLoaderChange\?\.\(loadSystemPrompt\)/);
   assert.match(loaderEffectSource, /onSystemPromptLoaderChange\?\.\(null\)/);
-  assert.match(appShellSource, /onClick=\{\(\) => handleSystemPromptToggle\(mobile\)\}/);
+  assert.match(appShellSource, /onClick=\{handleOpenSystemPrompt\}/);
   assert.match(appShellSource, /systemPromptLoaderRef\.current/);
   assert.doesNotMatch(appShellSource, /systemPrompt !== null \|\| systemPromptLoading/);
   assert.match(appShellSource, /const loadId = \+\+systemPromptLoadIdRef\.current/);
