@@ -288,7 +288,7 @@ export function AppShell() {
     });
     setActiveFileTabId(tabId);
     setRightPanelOpen(true);
-    setSettingsMenuOpen(false);
+    setSessionMenuOpen(false);
     if (isMobile) setSidebarOpen(false);
 
     if (systemPromptLoading) return;
@@ -302,12 +302,6 @@ export function AppShell() {
       if (systemPromptLoadIdRef.current === loadId) setSystemPromptLoading(false);
     });
   }, [isMobile, systemPrompt, systemPromptLoading, translate]);
-
-  // Retained as the mobile-toolbar action entry point; System now opens in the
-  // file panel rather than in a top-bar popover.
-  const handleSystemPromptToggle = useCallback((_keepMobileToolbarOpen = false) => {
-    handleOpenSystemPrompt();
-  }, [handleOpenSystemPrompt]);
 
   const openSessionStatsPanel = useCallback(() => {
     if (isMobile) setSidebarOpen(false);
@@ -1025,6 +1019,9 @@ export function AppShell() {
   }, [projectTrustBusy, projectTrustCwd]);
 
   const activeFileTab = fileTabs.find((tab) => tab.id === activeFileTabId) ?? null;
+  // The system prompt opens as a file tab, so the toolbar button reflects that
+  // tab rather than a top-bar panel.
+  const systemTabActive = rightPanelOpen && activeFileTab?.kind === "system";
   const activeCwdName = activeCwd ? getFileName(activeCwd) || activeCwd : null;
   const windowTitle = activeCwdName ? `${activeCwdName} - Pi Web` : "Pi Web";
 
@@ -1070,7 +1067,6 @@ export function AppShell() {
           }}>
             {[
               { label: themeMenuLabel, onClick: (event: React.MouseEvent<HTMLButtonElement>) => { const rect = event.currentTarget.getBoundingClientRect(); toggleTheme({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }); }, icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="12" cy="12" r="5" /><path d="M12 1v2m0 18v2M4.2 4.2l1.4 1.4m12.8 12.8 1.4 1.4M1 12h2m18 0h2M4.2 19.8l1.4-1.4m12.8-12.8 1.4-1.4" /></svg> },
-              { label: translate("system.prompt"), onClick: handleOpenSystemPrompt, icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="13" y2="17" /></svg> },
               { label: translate("common.models"), onClick: () => setModelsConfigOpen(true), icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2" /><rect x="9" y="9" width="6" height="6" /><path d="M9 1v3m6-3v3m-6 16v3m6-3v3m5-14h3m-3 5h3M1 9h3m-3 5h3" /></svg> },
               { label: translate("common.skills"), onClick: () => setSkillsConfigOpen(true), disabled: !projectTrustCwd, icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 2L2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5M2 12l10 5 10-5" /></svg> },
               { label: translate("common.plugins"), onClick: () => setPluginsConfigOpen(true), disabled: !projectTrustCwd, icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 7V2m6 5V2M6 13V8a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v5a6 6 0 0 1-12 0Z" /><path d="M12 19v3" /></svg> },
@@ -1490,21 +1486,21 @@ export function AppShell() {
         <button
           ref={systemBtnRef}
           type="button"
-          onClick={() => handleSystemPromptToggle(mobile)}
+          onClick={handleOpenSystemPrompt}
           disabled={mobile && !showChat}
           title={translate("system.prompt")}
           aria-label={translate("system.prompt")}
-          aria-pressed={activeTopPanel === "system"}
+          aria-pressed={systemTabActive}
           style={{
             display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
             width: mobile ? TOP_BAR_ICON_BUTTON_SIZE : undefined,
             height: "100%", padding: mobile ? 0 : "0 12px",
-            background: activeTopPanel === "system" ? "var(--bg-selected)" : "none",
+            background: systemTabActive ? "var(--bg-selected)" : "none",
             border: "none",
-            borderTop: activeTopPanel === "system" ? "2px solid var(--accent)" : "2px solid transparent",
+            borderTop: systemTabActive ? "2px solid var(--accent)" : "2px solid transparent",
             borderRight: "1px solid var(--border)",
             cursor: mobile && !showChat ? "not-allowed" : "pointer",
-            color: activeTopPanel === "system" ? "var(--text)" : "var(--text-muted)",
+            color: systemTabActive ? "var(--text)" : "var(--text-muted)",
             opacity: mobile && !showChat ? 0.45 : 1,
             fontSize: 11, whiteSpace: "nowrap", transition: "color 0.1s, background 0.1s",
           }}
@@ -1513,7 +1509,7 @@ export function AppShell() {
             event.currentTarget.style.color = "var(--text)";
           }}
           onMouseLeave={(event) => {
-            event.currentTarget.style.color = activeTopPanel === "system" ? "var(--text)" : "var(--text-muted)";
+            event.currentTarget.style.color = systemTabActive ? "var(--text)" : "var(--text-muted)";
           }}
           data-mobile-toolbar-action={mobile ? "system" : undefined}
         >
@@ -1553,6 +1549,10 @@ export function AppShell() {
             <button type="button" role="menuitem" disabled={!selectedSession} onClick={() => { handleViewFullHistory(); setSessionMenuOpen(false); }} style={{ ...itemStyle, opacity: selectedSession ? 1 : 0.45, cursor: selectedSession ? "pointer" : "not-allowed" }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5M12 7v5l3 2" /></svg>{translate("history.label")}</button>
             <button type="button" role="menuitem" disabled={titleDisabled} onClick={() => { void handleAutoName(); setSessionMenuOpen(false); }} style={{ ...itemStyle, opacity: titleDisabled ? 0.45 : 1, cursor: titleDisabled ? "not-allowed" : "pointer" }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 4 5 5L7 22l-5-5Z" /><path d="m14 5 5 5M6 4V2M5 3H3M19 19v3M17.5 20.5h3" /></svg>{translate("title.generate")}</button>
             <button type="button" role="menuitem" onClick={() => { toggleTopPanel("branches"); setSessionMenuOpen(false); }} style={itemStyle}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="6" y1="3" x2="6" y2="15" /><circle cx="18" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><path d="M18 9a9 9 0 0 1-9 9" /></svg>{translate("i18n.branches")}</button>
+            {/* The system prompt is session state — it is assembled per session from
+                its cwd, tools, skills and extensions — so it belongs here rather
+                than beside the global Models/Skills/Plugins settings. */}
+            <button type="button" role="menuitem" onClick={handleOpenSystemPrompt} style={itemStyle}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="13" y2="17" /></svg>{translate("system.prompt")}</button>
           </div>
         )}
       </div>

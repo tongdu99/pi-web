@@ -43,7 +43,12 @@ test("keeps the mobile action layer open after using an expanded action", () => 
   }
 
   assert.match(source, /toggleTopPanel\("branches", true\)/);
-  assert.match(source, /handleSystemPromptToggle\(mobile\)/);
+  // System opens a file tab instead of a top panel, so it keeps the action
+  // layer open by never closing it rather than by forwarding a flag.
+  const openSystemPrompt = source.match(/const handleOpenSystemPrompt = useCallback\([\s\S]*?\n  \}, \[[^\]]*\]\);/)?.[0];
+  assert.ok(openSystemPrompt);
+  assert.doesNotMatch(openSystemPrompt, /setMobileToolbarMoreOpen\(false\)/);
+  assert.match(source, /onClick=\{handleOpenSystemPrompt\}/);
   assert.match(source, /toggleTopPanel\("language", mobile\)/);
   assert.match(source, /onClick=\{\(\) => toggleTopPanel\("session"\)\}/);
 });
