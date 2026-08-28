@@ -26,6 +26,7 @@ import {
 } from "@/lib/chat-lazy-load";
 import { CHAT_CONTENT_MAX_WIDTH } from "@/lib/chat-layout";
 import { findMarkdownThreadAnchor } from "@/lib/markdown-thread-anchor";
+import type { FileLineRange } from "@/lib/file-links";
 import {
   collectDiscussionThreads,
   findActiveDiscussionThread,
@@ -60,7 +61,7 @@ interface Props {
   onAttachStateChange?: (state: AttachState) => void;
   /** Registers the action that releases this session's working directory. */
   onDetachHandlerChange?: (handler: (() => Promise<void>) | null) => void;
-  onOpenFile?: (filePath: string) => void;
+  onOpenFile?: (filePath: string, lineRange?: FileLineRange) => void;
   onOpenChangedFile?: (filePath: string) => void;
   onOpenUrl?: (url: string) => void;
   /** Completion sound state + controls, owned by AppShell so tasks finishing in

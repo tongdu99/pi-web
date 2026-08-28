@@ -74,6 +74,23 @@ test("changing source while forcing diff increments the revision once", () => {
   assert.equal(next.viewerState.displayMode, "diff");
 });
 
+test("opening a code reference focuses source mode and remounts repeated targets", () => {
+  const lineRange = { startLine: 42, endLine: 45 };
+  const first = openFileTab([tabA, tabB], { ...openA, targetLineRange: lineRange });
+
+  assert.equal(first[0].viewerRevision, 1);
+  assert.deepEqual(first[0].targetLineRange, lineRange);
+  assert.deepEqual(first[0].viewerState, {
+    displayMode: "source",
+    wrapLines: true,
+    scrollTop: 0,
+    scrollLeft: 0,
+  });
+
+  const second = openFileTab(first, { ...openA, targetLineRange: lineRange });
+  assert.equal(second[0].viewerRevision, 2);
+});
+
 test("every explicit diff activation resets the mode and increments the revision", () => {
   const first = openFileTab([tabA, tabB], { ...openA, modeHint: "diff" });
   assert.equal(first[0].viewerRevision, 1);

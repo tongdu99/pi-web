@@ -18,7 +18,7 @@ import {
   isImagePath,
 } from "@/lib/file-types";
 import { encodeFilePathForApi, getFileDirectory, getFileName, getRelativeFilePath } from "@/lib/file-paths";
-import { resolveLocalFileHref } from "@/lib/file-links";
+import { resolveLocalFileReference, type FileLineRange } from "@/lib/file-links";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { markdownPreviewRehypePlugins, markdownPreviewRemarkPlugins, normalizeDisplayMath } from "@/lib/markdown";
 import { CodeBlock, MermaidBlock } from "./MermaidBlock";
@@ -38,7 +38,9 @@ interface Props {
   filePath: string;
   cwd?: string;
   sourceSessionId?: string | null;
-  onOpenFile?: (filePath: string) => void;
+  onOpenFile?: (filePath: string, lineRange?: FileLineRange) => void;
+  /** Source lines to reveal and highlight when opened from a code reference. */
+  targetLineRange?: FileLineRange;
   onMentionLines?: (relativePath: string, startLine: number, endLine: number) => void;
   /** Insert this file's relative path into the chat input (@ mention). */
   onAtMention?: (relativePath: string, isDir: boolean) => void;
@@ -122,6 +124,7 @@ const FILE_LINE_NUMBER_STYLE: CSSProperties = {
 
 type SourceCodeRendererProps = Parameters<NonNullable<SyntaxHighlighterProps["renderer"]>>[0] & {
   wrapLines: boolean;
+  targetLineRange?: FileLineRange;
 };
 
 interface SelectedLineRange {
@@ -196,8 +199,14 @@ function getSelectedSourceLineRange(root: HTMLElement, selection: Selection | nu
   return { startLine, endLine };
 }
 
-function SourceCodeRenderer({ rows, stylesheet, useInlineStyles, wrapLines }: SourceCodeRendererProps) {
+function SourceCodeRenderer({ rows, stylesheet, useInlineStyles, wrapLines, targetLineRange }: SourceCodeRendererProps) {
   return rows.map((row, lineIndex) => {
+    const lineNumber = lineIndex + 1;
+    const targeted = Boolean(
+      targetLineRange
+      && lineNumber >= targetLineRange.startLine
+      && lineNumber <= targetLineRange.endLine,
+    );
     const children = row.children ?? [];
     const firstChildClasses = children[0]?.properties?.className;
     const hasLineNumber = Array.isArray(firstChildClasses)
@@ -207,10 +216,15 @@ function SourceCodeRenderer({ rows, stylesheet, useInlineStyles, wrapLines }: So
 
     return (
       <span
-        className="file-source-line"
-        data-line-number={lineIndex + 1}
+        className={targeted ? "file-source-line is-targeted" : "file-source-line"}
+        data-line-number={lineNumber}
         key={`source-line-${lineIndex}`}
-        style={{ display: "flex", minWidth: "100%" }}
+        style={{
+          display: "flex",
+          minWidth: "100%",
+          background: targeted ? "color-mix(in srgb, var(--accent) 16%, transparent)" : undefined,
+          boxShadow: targeted ? "inset 3px 0 0 var(--accent)" : undefined,
+        }}
       >
         {lineNumberNode && renderSyntaxNode({
           node: lineNumberNode,
@@ -959,6 +973,7 @@ export function FileViewer({
   cwd,
   sourceSessionId,
   onOpenFile,
+  targetLineRange,
   onMentionLines,
   onAtMention,
   gitRefreshKey,
@@ -988,6 +1003,7 @@ export function FileViewer({
       initialDisplayMode={initialDisplayMode}
       initialState={initialState}
       onStateChange={onStateChange}
+      targetLineRange={targetLineRange}
       watchEnabled={watchEnabled}
     />
   );
@@ -998,6 +1014,7 @@ function TextFileViewer({
   cwd,
   sourceSessionId,
   onOpenFile,
+  targetLineRange,
   onMentionLines,
   onAtMention,
   gitRefreshKey,
@@ -1324,6 +1341,21 @@ function TextFileViewer({
     requestedInitialDisplayMode,
   ]);
 
+  useEffect(() => {
+    if (!targetLineRange || loading || error || displayMode !== "source") return;
+    const content = contentRef.current;
+    if (!content) return;
+
+    // Run after syntax highlighting has committed its per-line elements. Clamp
+    // stale references so an edited, shorter file still lands near the end.
+    const frame = requestAnimationFrame(() => {
+      const sourceLines = content.querySelectorAll<HTMLElement>(".file-source-line[data-line-number]");
+      const targetIndex = Math.min(targetLineRange.startLine - 1, sourceLines.length - 1);
+      sourceLines[targetIndex]?.scrollIntoView({ block: "center", inline: "nearest" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [data?.content, displayMode, error, loading, targetLineRange]);
+
   // Show the file as soon as its contents arrive. Diff retrieval can be
   // slower than a file read, so keeping source visible is more useful than
   // leaving the panel on a blank loading state while it completes.
@@ -1531,7 +1563,7 @@ function TextFileViewer({
                 a({ href, children, ...props }) {
                   delete props.node;
                   const linkedFile = onOpenFile
-                    ? resolveLocalFileHref(href, markdownDirectory, cwd ?? markdownDirectory)
+                    ? resolveLocalFileReference(href, markdownDirectory, cwd ?? markdownDirectory)
                     : null;
                   if (!linkedFile || !onOpenFile) {
                     return <a href={href} {...props}>{children}</a>;
@@ -1541,7 +1573,7 @@ function TextFileViewer({
                     if (event.defaultPrevented || event.button !== 0) return;
                     if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
                     event.preventDefault();
-                    onOpenFile(linkedFile);
+                    onOpenFile(linkedFile.filePath, linkedFile.lineRange);
                   };
 
                   return <a href={href} {...props} onClick={handleClick}>{children}</a>;
@@ -1549,7 +1581,7 @@ function TextFileViewer({
                 img({ src, alt, ...props }) {
                   delete props.node;
                   const imagePath = typeof src === "string"
-                    ? resolveLocalFileHref(src, markdownDirectory, cwd ?? markdownDirectory)
+                    ? resolveLocalFileReference(src, markdownDirectory, cwd ?? markdownDirectory)?.filePath
                     : null;
                   const imageSrc = imagePath
                     ? getFileApiUrl(imagePath, "read", sourceSessionId)
@@ -1590,7 +1622,11 @@ function TextFileViewer({
               },
             }}
             renderer={(rendererProps) => (
-              <SourceCodeRenderer {...rendererProps} wrapLines={wrapLines} />
+              <SourceCodeRenderer
+                {...rendererProps}
+                wrapLines={wrapLines}
+                targetLineRange={targetLineRange}
+              />
             )}
             wrapLongLines={wrapLines}
           >

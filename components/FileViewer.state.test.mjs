@@ -72,6 +72,16 @@ test("TextFileViewer keeps first-mount preview eligibility across Strict Effects
   assert.match(block, /defaultPreviewEligibleRef\.current[\s\S]*updateDisplayMode\("preview"\)/);
 });
 
+test("TextFileViewer highlights and reveals a targeted source range", () => {
+  const renderer = functionBlock("SourceCodeRenderer", "getFileApiUrl");
+  const viewer = functionBlock("TextFileViewer", null);
+
+  assert.match(renderer, /lineNumber >= targetLineRange\.startLine/);
+  assert.match(renderer, /className=\{targeted \? "file-source-line is-targeted"/);
+  assert.match(viewer, /sourceLines\[targetIndex\]\?\.scrollIntoView\(\{ block: "center", inline: "nearest" \}\)/);
+  assert.match(viewer, /targetLineRange=\{targetLineRange\}/);
+});
+
 test("markdown table tokens stay inline despite Tailwind's table utility", () => {
   const html = renderToStaticMarkup(
     React.createElement(

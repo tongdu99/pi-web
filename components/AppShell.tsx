@@ -23,6 +23,7 @@ import { useAudio } from "@/hooks/useAudio";
 import type { AttachState } from "@/hooks/useAgentSession";
 import { copyText } from "@/lib/clipboard";
 import { getFileName } from "@/lib/file-paths";
+import type { FileLineRange } from "@/lib/file-links";
 import { getWebUrlLabel, normalizeWebUrl } from "@/lib/web-url";
 import { buildAtMentionText, buildFileAtMentionsText, buildFileLineMentionText } from "@/lib/file-fuzzy";
 import {
@@ -842,10 +843,11 @@ export function AppShell() {
   const handleOpenFile = useCallback((
     filePath: string,
     fileName: string,
-    options?: { sourceSessionId?: string | null; modeHint?: "diff" },
+    options?: { sourceSessionId?: string | null; modeHint?: "diff"; targetLineRange?: FileLineRange },
   ) => {
     const sourceSessionId = options?.sourceSessionId;
     const modeHint = options?.modeHint;
+    const targetLineRange = options?.targetLineRange;
     const tabId = `file:${filePath}`;
     setFileTabs((prev) => openFileTab(prev, {
       fileName,
@@ -853,6 +855,7 @@ export function AppShell() {
       modeHint,
       sourceSessionId,
       tabId,
+      targetLineRange,
     }));
     setActiveFileTabId(tabId);
     setRightPanelOpen(true);
@@ -860,8 +863,11 @@ export function AppShell() {
     if (isMobile) setSidebarOpen(false);
   }, [isMobile]);
 
-  const handleOpenLinkedFile = useCallback((filePath: string) => {
-    handleOpenFile(filePath, getFileName(filePath), { sourceSessionId: selectedSession?.id ?? null });
+  const handleOpenLinkedFile = useCallback((filePath: string, lineRange?: FileLineRange) => {
+    handleOpenFile(filePath, getFileName(filePath), {
+      sourceSessionId: selectedSession?.id ?? null,
+      targetLineRange: lineRange,
+    });
   }, [handleOpenFile, selectedSession?.id]);
 
   // Files listed below a completed response came from successful write/edit
@@ -2407,7 +2413,7 @@ export function AppShell() {
           </button>
         </div>
 
-        {/* Keep web viewers mounted while inactive so switching tabs does not reload them. */}
+        {/* Only the active viewer mounts a FileViewer; keep web viewers mounted so inactive tabs do not reload. */}
         <div style={{ flex: 1, overflow: "hidden", paddingBottom: "env(safe-area-inset-bottom)" }}>
           {fileTabs.filter((tab) => tab.kind === "web").map((tab) => (
             <div
@@ -2435,6 +2441,7 @@ export function AppShell() {
               gitRefreshKey={explorerRefreshKey}
               initialDisplayMode={activeFileTab.initialDisplayMode}
               initialState={activeFileTab.viewerState}
+              targetLineRange={activeFileTab.targetLineRange}
               watchEnabled={rightPanelOpen}
               onStateChange={(viewerState) => handleFileViewerStateChange(
                 activeFileTab.id,
@@ -2443,10 +2450,13 @@ export function AppShell() {
               )}
               onMentionLines={rightPanelOpen ? handleFileLineMention : undefined}
               onAtMention={handleAtMention}
-              onOpenFile={(filePath) => handleOpenFile(
+              onOpenFile={(filePath, lineRange) => handleOpenFile(
                 filePath,
                 getFileName(filePath),
-                { sourceSessionId: activeFileTab.sourceSessionId },
+                {
+                  sourceSessionId: activeFileTab.sourceSessionId,
+                  targetLineRange: lineRange,
+                },
               )}
             />
           ) : (

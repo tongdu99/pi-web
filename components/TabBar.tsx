@@ -4,6 +4,7 @@ import { useState } from "react";
 import { getFileIcon } from "./FileIcons";
 import { useI18n } from "@/hooks/useI18n";
 import type { FileViewerDisplayMode, FileViewerState } from "@/lib/file-viewer-state";
+import type { FileLineRange } from "@/lib/file-links";
 
 export interface Tab {
   id: string;
@@ -17,6 +18,7 @@ export interface Tab {
   initialDisplayMode?: FileViewerDisplayMode;
   viewerState?: FileViewerState;
   viewerRevision?: number;
+  targetLineRange?: FileLineRange;
 }
 
 interface Props {

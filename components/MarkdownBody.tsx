@@ -2,7 +2,7 @@
 
 import { useMemo, type MouseEvent, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
-import { resolveLocalFileHref } from "@/lib/file-links";
+import { resolveLocalFileReference, type FileLineRange } from "@/lib/file-links";
 import { encodeFilePathForApi } from "@/lib/file-paths";
 import { markdownRehypePlugins, markdownRemarkPlugins, normalizeDisplayMath } from "@/lib/markdown";
 import { MermaidBlock, CodeBlock } from "./MermaidBlock";
@@ -13,7 +13,7 @@ interface MarkdownBodyProps {
   className?: string;
   isStreaming?: boolean;
   cwd?: string;
-  onOpenFile?: (filePath: string) => void;
+  onOpenFile?: (filePath: string, lineRange?: FileLineRange) => void;
   /** Opens an external HTTP(S) link in the app's web panel. */
   onOpenUrl?: (url: string) => void;
   /** Inline content appended after addressable Markdown blocks. */
@@ -65,10 +65,10 @@ export function MarkdownBody({ children, className, isStreaming, cwd, onOpenFile
     a({ href, children, ...props }) {
       // `node` is react-markdown metadata, not a DOM attribute.
       delete props.node;
-      const filePath = onOpenFile ? resolveLocalFileHref(href, cwd) : null;
+      const fileReference = onOpenFile ? resolveLocalFileReference(href, cwd) : null;
       const webUrl = onOpenUrl ? getExternalWebUrl(href) : null;
       const openFile = onOpenFile;
-      if ((!filePath || !openFile) && (!webUrl || !onOpenUrl)) {
+      if ((!fileReference || !openFile) && (!webUrl || !onOpenUrl)) {
         return (
           <a href={href} {...props} target="_blank" rel="noopener noreferrer">
             {children}
@@ -82,7 +82,7 @@ export function MarkdownBody({ children, className, isStreaming, cwd, onOpenFile
         const target = event.currentTarget.getAttribute("target");
         if (target && target !== "_self") return;
         event.preventDefault();
-        if (filePath && openFile) openFile(filePath);
+        if (fileReference && openFile) openFile(fileReference.filePath, fileReference.lineRange);
         else if (webUrl && onOpenUrl) onOpenUrl(webUrl);
       };
 
@@ -90,7 +90,7 @@ export function MarkdownBody({ children, className, isStreaming, cwd, onOpenFile
     },
     img({ src, alt, ...props }) {
       delete props.node;
-      const filePath = typeof src === "string" ? resolveLocalFileHref(src, cwd) : null;
+      const filePath = typeof src === "string" ? resolveLocalFileReference(src, cwd)?.filePath : null;
       const imageSrc = filePath
         ? `/api/files/${encodeFilePathForApi(filePath)}?type=read`
         : src;

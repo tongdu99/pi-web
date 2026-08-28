@@ -13,6 +13,7 @@ import { TurnWrittenFiles } from "./TurnWrittenFiles";
 import type { WrittenFile } from "@/lib/turn-written-files";
 import { skillExpansionToCommand } from "@/lib/slash-display";
 import { findMarkdownThreadAnchor } from "@/lib/markdown-thread-anchor";
+import type { FileLineRange } from "@/lib/file-links";
 import type {
   AgentMessage,
   UserMessage,
@@ -190,7 +191,7 @@ interface Props {
   toolResults?: Map<string, ToolResultMessage>;
   modelNames?: Record<string, string>;
   cwd?: string;
-  onOpenFile?: (filePath: string) => void;
+  onOpenFile?: (filePath: string, lineRange?: FileLineRange) => void;
   /** Opens a file listed as changed by this turn in its review/diff view. */
   onOpenChangedFile?: (filePath: string) => void;
   onOpenUrl?: (url: string) => void;
@@ -311,7 +312,7 @@ export const MessageView = memo(function MessageView({ message, isStreaming, pro
 function UserMessageView({ message, cwd, onOpenFile, onOpenUrl, entryId, onFork, forking, onNavigate, prevAssistantEntryId, onEditContent }: {
   message: UserMessage;
   cwd?: string;
-  onOpenFile?: (filePath: string) => void;
+  onOpenFile?: (filePath: string, lineRange?: FileLineRange) => void;
   onOpenUrl?: (url: string) => void;
   entryId?: string;
   onFork?: (entryId: string) => void;
@@ -615,7 +616,7 @@ function AssistantMessageView({
   toolResults?: Map<string, ToolResultMessage>;
   modelNames?: Record<string, string>;
   cwd?: string;
-  onOpenFile?: (filePath: string) => void;
+  onOpenFile?: (filePath: string, lineRange?: FileLineRange) => void;
   onOpenChangedFile?: (filePath: string) => void;
   onOpenUrl?: (url: string) => void;
   showTimestamp?: boolean;
@@ -916,7 +917,7 @@ function AssistantMessageView({
   );
 }
 
-function BlockView({ block, toolResults, isStreaming, processingCompact, processingActive, streamingDuration, toolCallDurations, cwd, onOpenFile, onOpenUrl, sessionId, entryId, blockIndex, onQuote, onDiscuss, discussionThreadPanels }: { block: AssistantContentBlock; toolResults?: Map<string, ToolResultMessage>; isStreaming?: boolean; processingCompact?: boolean; processingActive?: boolean; streamingDuration?: number; toolCallDurations?: Map<string, number>; cwd?: string; onOpenFile?: (filePath: string) => void; onOpenUrl?: (url: string) => void; sessionId?: string; entryId?: string; blockIndex: number; onQuote?: (text: string) => void; onDiscuss?: (text: string, anchorKey?: string) => void; discussionThreadPanels?: DiscussionThreadInlinePanel[] }) {
+function BlockView({ block, toolResults, isStreaming, processingCompact, processingActive, streamingDuration, toolCallDurations, cwd, onOpenFile, onOpenUrl, sessionId, entryId, blockIndex, onQuote, onDiscuss, discussionThreadPanels }: { block: AssistantContentBlock; toolResults?: Map<string, ToolResultMessage>; isStreaming?: boolean; processingCompact?: boolean; processingActive?: boolean; streamingDuration?: number; toolCallDurations?: Map<string, number>; cwd?: string; onOpenFile?: (filePath: string, lineRange?: FileLineRange) => void; onOpenUrl?: (url: string) => void; sessionId?: string; entryId?: string; blockIndex: number; onQuote?: (text: string) => void; onDiscuss?: (text: string, anchorKey?: string) => void; discussionThreadPanels?: DiscussionThreadInlinePanel[] }) {
   if (block.type === "text") {
     if (processingCompact) {
       return <ProcessingTextBlock block={block as TextContent} active={Boolean(processingActive)} isStreaming={isStreaming} cwd={cwd} onOpenFile={onOpenFile} onOpenUrl={onOpenUrl} />;
@@ -1037,7 +1038,7 @@ function selectedMarkdown(selection: Selection): string {
   return marker && !/^(?:[-*+] |\d+[.)] )/.test(markdown) ? marker + markdown : markdown;
 }
 
-function ProcessingTextBlock({ block, active, isStreaming, cwd, onOpenFile, onOpenUrl }: { block: TextContent; active: boolean; isStreaming?: boolean; cwd?: string; onOpenFile?: (filePath: string) => void; onOpenUrl?: (url: string) => void }) {
+function ProcessingTextBlock({ block, active, isStreaming, cwd, onOpenFile, onOpenUrl }: { block: TextContent; active: boolean; isStreaming?: boolean; cwd?: string; onOpenFile?: (filePath: string, lineRange?: FileLineRange) => void; onOpenUrl?: (url: string) => void }) {
   const [expanded, setExpanded] = useState(active);
   useEffect(() => setExpanded(active), [active]);
 
@@ -1072,7 +1073,7 @@ function ProcessingTextBlock({ block, active, isStreaming, cwd, onOpenFile, onOp
   );
 }
 
-function TextBlock({ block, isStreaming, cwd, onOpenFile, onOpenUrl, onQuote, onDiscuss, blockKeyPrefix, discussionThreadPanels }: { block: TextContent; isStreaming?: boolean; cwd?: string; onOpenFile?: (filePath: string) => void; onOpenUrl?: (url: string) => void; onQuote?: (text: string) => void; onDiscuss?: (text: string, anchorKey?: string) => void; blockKeyPrefix?: string; discussionThreadPanels?: DiscussionThreadInlinePanel[] }) {
+function TextBlock({ block, isStreaming, cwd, onOpenFile, onOpenUrl, onQuote, onDiscuss, blockKeyPrefix, discussionThreadPanels }: { block: TextContent; isStreaming?: boolean; cwd?: string; onOpenFile?: (filePath: string, lineRange?: FileLineRange) => void; onOpenUrl?: (url: string) => void; onQuote?: (text: string) => void; onDiscuss?: (text: string, anchorKey?: string) => void; blockKeyPrefix?: string; discussionThreadPanels?: DiscussionThreadInlinePanel[] }) {
   const { t } = useI18n();
   const containerRef = useRef<HTMLDivElement>(null);
   const [quoteAction, setQuoteAction] = useState<{ text: string; left: number; top: number; anchorKey?: string } | null>(null);
@@ -1743,7 +1744,7 @@ function CompactionFileList({ title, files }: { title: string; files: string[] }
   );
 }
 
-function CustomMessageView({ message, cwd, onOpenFile, onOpenUrl }: { message: CustomMessage; cwd?: string; onOpenFile?: (filePath: string) => void; onOpenUrl?: (url: string) => void }) {
+function CustomMessageView({ message, cwd, onOpenFile, onOpenUrl }: { message: CustomMessage; cwd?: string; onOpenFile?: (filePath: string, lineRange?: FileLineRange) => void; onOpenUrl?: (url: string) => void }) {
   const { t } = useI18n();
   const isHiddenDisplay = message.display === false;
   const [contentExpanded, setContentExpanded] = useState(!isHiddenDisplay);

@@ -69,6 +69,19 @@ test("keeps local file markdown links in the app", () => {
   assert.doesNotMatch(html, /target=|rel=|\snode=/);
 });
 
+test("opens only explicit code-reference links instead of guessing from text", () => {
+  const plainHtml = renderMarkdown("See ReagentKitAccessImpl.java:42-45 for the access check.");
+  const linkedHtml = renderMarkdown(
+    "[ReagentKitAccessImpl.java:42-45](/worktree/product/ReagentKitAccessImpl.java#L42-L45)",
+  );
+
+  assert.doesNotMatch(plainHtml, /<a/);
+  assert.match(
+    linkedHtml,
+    /<a href="\/worktree\/product\/ReagentKitAccessImpl\.java#L42-L45">ReagentKitAccessImpl\.java:42-45<\/a>/,
+  );
+});
+
 test("keeps single-tilde CJK numeric ranges literal instead of striking them", () => {
   const html = renderMarkdown("5~7U 保证金 × 100~200倍杠杆");
 

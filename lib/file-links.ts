@@ -13,8 +13,37 @@ function normalizeFilePathSlashes(filePath: string): string {
   return filePath;
 }
 
+export interface FileLineRange {
+  startLine: number;
+  endLine: number;
+}
+
+export interface LocalFileReference {
+  filePath: string;
+  lineRange?: FileLineRange;
+}
+
 function stripLineSuffix(filePath: string): string {
-  return filePath.replace(/:\d+(?::\d+)?$/, "");
+  return filePath.replace(/:\d+(?:(?:-\d+)|(?::\d+))?$/, "");
+}
+
+/** Extract `:42`, `:42-45`, `:42:8`, and GitHub-style `#L42-L45` locations. */
+export function parseFileLineRange(value: string | undefined): FileLineRange | undefined {
+  if (!value) return undefined;
+
+  const hashMatch = /#L(\d+)(?:-L?(\d+))?(?:$|[?&])/i.exec(value);
+  const pathWithoutQueryOrHash = value.split("#", 1)[0].split("?", 1)[0];
+  const suffixMatch = /:(\d+)(?:-(\d+)|:\d+)?$/.exec(pathWithoutQueryOrHash);
+  const match = hashMatch ?? suffixMatch;
+  if (!match) return undefined;
+
+  const startLine = Number(match[1]);
+  const requestedEndLine = match[2] ? Number(match[2]) : startLine;
+  if (!Number.isSafeInteger(startLine) || startLine < 1) return undefined;
+  if (!Number.isSafeInteger(requestedEndLine) || requestedEndLine < startLine) {
+    return { startLine, endLine: startLine };
+  }
+  return { startLine, endLine: requestedEndLine };
 }
 
 function normalizeLocalPath(filePath: string): string {
@@ -88,7 +117,9 @@ export function resolveLocalFileHref(
   let candidateKind: "absolute" | "relative" | null = null;
   const decodedHref = safeDecode(cleanHref);
   const isBackslashUncPath = decodedHref.startsWith("\\\\");
-  const normalizedHref = normalizeFilePathSlashes(decodedHref);
+  // Remove source locations before checking URI schemes. Otherwise a relative
+  // reference such as `Example.java:42` looks like a custom `Example.java:` URL.
+  const normalizedHref = stripLineSuffix(normalizeFilePathSlashes(decodedHref));
   const lowerHref = normalizedHref.toLowerCase();
 
   if (lowerHref.startsWith("/api/") || lowerHref.startsWith("/_next/")) return null;
@@ -116,6 +147,18 @@ export function resolveLocalFileHref(
   const filePath = stripLineSuffix(normalizeLocalPath(candidate));
   if (candidateKind === "relative" && relativeRoot && !isPathInside(filePath, relativeRoot)) return null;
   return filePath;
+}
+
+/** Resolve a Markdown href or displayed source reference, retaining its lines. */
+export function resolveLocalFileReference(
+  href: string | undefined,
+  baseDir?: string,
+  relativeRoot = baseDir,
+): LocalFileReference | null {
+  const filePath = resolveLocalFileHref(href, baseDir, relativeRoot);
+  if (!filePath) return null;
+  const lineRange = parseFileLineRange(href);
+  return lineRange ? { filePath, lineRange } : { filePath };
 }
 
 /** Resolve a filesystem path without applying URL or source-location syntax. */
