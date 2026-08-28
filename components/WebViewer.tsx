@@ -197,11 +197,6 @@ export function WebViewer({ url, onNavigate }: Props) {
           {t("web.enterAddress")}
         </div>
       )}
-      {url && !desktop && (
-        <div style={{ padding: "5px 10px", borderTop: "1px solid var(--border)", color: "var(--text-dim)", fontSize: 11 }}>
-          {t("web.embedNotice")}
-        </div>
-      )}
     </div>
   );
 }

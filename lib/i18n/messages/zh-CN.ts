@@ -78,7 +78,6 @@ export const zhCNLocale: LocalePlugin = {
     "web.openExternal": "在新的浏览器标签页中打开",
     "web.enterAddress": "输入网页地址以在此面板中打开。",
     "web.invalidUrl": "请输入有效的 http 或 https URL。",
-    "web.embedNotice": "部分网站（包括 Google）不允许嵌入。页面被阻止时，请使用“在新的浏览器标签页中打开”。",
     "layout.resizeSidebar": "调整侧边栏宽度",
     "layout.resizeFilePanel": "调整文件面板宽度",
     "layout.resizeHint": "拖动调整宽度。双击或按 Enter 恢复默认值。",

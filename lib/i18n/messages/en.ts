@@ -78,7 +78,6 @@ export const enLocale: LocalePlugin = {
     "web.openExternal": "Open in new browser tab",
     "web.enterAddress": "Enter a web address to open it in this panel.",
     "web.invalidUrl": "Enter a valid http or https URL.",
-    "web.embedNotice": "Some websites, including Google, do not allow embedding. Use Open in new browser tab if the page is blocked.",
     "layout.resizeSidebar": "Resize sidebar",
     "layout.resizeFilePanel": "Resize file panel",
     "layout.resizeHint": "Drag to resize. Double-click or press Enter to reset.",
