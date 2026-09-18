@@ -54,7 +54,9 @@ export async function buildLiveDocContext(binding: ActiveLiveDocBinding): Promis
     binding.sourceMarkdown ? `Source assistant response to merge:\n---\n${binding.sourceMarkdown}\n---` : "",
     section ? `Current bound section:\n---\n${section.markdown}\n---` : "",
     `Current complete Live Doc:\n---\n${liveDocContent(doc)}\n---`,
-    "Answer the user's request normally. When the request justifies a document change, call live_doc_update exactly once with the complete replacement Markdown for the bound section, or for the complete document when no section is bound.",
+    binding.purpose === "merge-response"
+      ? "This is an explicit Add to Live Doc request. You must call live_doc_update exactly once with the complete merged document."
+      : "Answer the user's request normally. When the discussion justifies a document change, call live_doc_update exactly once with the complete replacement Markdown for the bound section.",
     "Preserve useful existing content, organize it into coherent Markdown sections, and avoid duplicating information already present.",
     "An empty replacement removes a bound section. Do not claim an update succeeded until the tool confirms it.",
   ].filter(Boolean).join("\n\n");

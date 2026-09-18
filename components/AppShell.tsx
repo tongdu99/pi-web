@@ -58,6 +58,7 @@ import type { SessionStatsInfo } from "@/lib/pi-types";
 import type { FileViewerState } from "@/lib/file-viewer-state";
 import type { LiveDocRecord, LiveDocSummary } from "@/lib/live-docs";
 import { useLiveDocs } from "@/hooks/useLiveDocs";
+import { liveDocsEnabled } from "@/lib/live-doc-feature";
 
 type SessionCopyField = "file" | "id";
 type AutoNameStatus =
@@ -79,6 +80,7 @@ export function AppShell() {
   const { locale, setLocale, t: translate, supportedLocales } = useI18n();
   const themeMenuLabel = translate(themeLabelKey).replace(/\s*\([^)]*\)\s*$/, "");
   const isMobile = useIsMobile();
+  const liveDocsFeatureEnabled = liveDocsEnabled();
   useViewportHeight();
   // Audio ownership lives here (not in ChatWindow) so the completion tone can
   // also fire for tasks finishing in a non-active workspace whose ChatWindow
@@ -425,7 +427,7 @@ export function AppShell() {
     updateSummary: updateLiveDocSummary,
     loading: liveDocsLoading,
     error: liveDocsError,
-  } = useLiveDocs(selectedSession?.id ?? null);
+  } = useLiveDocs(liveDocsFeatureEnabled ? selectedSession?.id ?? null : null);
 
   const handleFileViewerStateChange = useCallback((
     tabId: string,
@@ -2025,7 +2027,7 @@ export function AppShell() {
                 )}
               </button>
               {renderSessionStatsButton(true)}
-              <LiveDocsMenu
+              {liveDocsFeatureEnabled && <LiveDocsMenu
                 docs={liveDocs}
                 defaultDocId={defaultDocId}
                 disabled={!selectedSession || selectedSession.transient}
@@ -2033,7 +2035,7 @@ export function AppShell() {
                 error={liveDocsError}
                 onCreate={() => { void handleCreateLiveDoc(); }}
                 onOpen={handleOpenLiveDoc}
-              />
+              />}
               {renderSessionMenuButton()}
               {renderMainFileToggle(true)}
               {false && (
@@ -2064,7 +2066,7 @@ export function AppShell() {
           {!isMobile && renderProjectTrustWarning(false)}
           {!isMobile && (
             <div style={{ marginLeft: "auto", display: "flex", alignItems: "stretch", height: "100%" }}>
-              <LiveDocsMenu
+              {liveDocsFeatureEnabled && <LiveDocsMenu
                 docs={liveDocs}
                 defaultDocId={defaultDocId}
                 disabled={!selectedSession || selectedSession.transient}
@@ -2072,7 +2074,7 @@ export function AppShell() {
                 error={liveDocsError}
                 onCreate={() => { void handleCreateLiveDoc(); }}
                 onOpen={handleOpenLiveDoc}
-              />
+              />}
               {renderSessionMenuButton()}
               {renderMainFileToggle(false)}
             </div>
@@ -2348,12 +2350,12 @@ export function AppShell() {
               onOpenFile={handleOpenLinkedFile}
               onOpenChangedFile={handleOpenChangedFile}
               onOpenUrl={handleOpenWebUrl}
-              liveDocs={liveDocs}
-              defaultLiveDocId={defaultDocId}
-              onDefaultLiveDocChange={setDefaultDocId}
-              onCreateLiveDoc={handleCreateLiveDoc}
-              onOpenLiveDoc={handleOpenLiveDoc}
-              onLiveDocDiscussionHandlerChange={handleLiveDocDiscussionHandlerChange}
+              liveDocs={liveDocsFeatureEnabled ? liveDocs : []}
+              defaultLiveDocId={liveDocsFeatureEnabled ? defaultDocId : null}
+              onDefaultLiveDocChange={liveDocsFeatureEnabled ? setDefaultDocId : undefined}
+              onCreateLiveDoc={liveDocsFeatureEnabled ? handleCreateLiveDoc : undefined}
+              onOpenLiveDoc={liveDocsFeatureEnabled ? handleOpenLiveDoc : undefined}
+              onLiveDocDiscussionHandlerChange={liveDocsFeatureEnabled ? handleLiveDocDiscussionHandlerChange : undefined}
               soundEnabled={soundEnabled}
               onSoundToggle={onSoundToggle}
               playDoneSound={playDoneSound}

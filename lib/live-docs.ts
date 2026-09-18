@@ -57,7 +57,7 @@ const globalState = globalThis as typeof globalThis & {
 const locks = globalState.__piWebLiveDocLocks ??= new Map<string, Promise<void>>();
 
 function rootDir(root?: string): string {
-  return root ?? join(getAgentDir(), "pi-web", "live-docs");
+  return root ?? process.env.PI_WEB_LIVE_DOCS_DIR ?? join(getAgentDir(), "pi-web", "live-docs");
 }
 
 function assertId(id: string): void {
