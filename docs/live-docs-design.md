@@ -1,7 +1,7 @@
 # Live Docs: Design and Implementation Plan
 
-> Status: Proposed design, revised from the product discussion.
-> This file is a static working example, not an implemented live doc.
+> Status: Phase 1 MVP implemented on `feature/live-docs-mvp`; later phases remain proposed.
+> This file began as the static working example used to design the Live Doc workflow.
 
 ## 1. Product direction
 
