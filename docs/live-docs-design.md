@@ -444,7 +444,7 @@ Use this design file in the right panel while discussing it in chat. Revise the 
 - Provide a minimal revision history with **Restore this revision**; restoring creates a new head revision.
 - Reconnect or refresh loads the current head and retains the default doc target for the session.
 - Enforce the bound doc/section server-side rather than trusting a model-provided destination.
-- Keep the feature behind a flag and cover the new host seams while ensuring ordinary chat, existing threads, and file tabs remain unchanged.
+- Keep the feature behind `NEXT_PUBLIC_PI_WEB_LIVE_DOCS` (enabled by default; set it to `0` or `false` to disable the UI) and cover the new host seams while ensuring ordinary chat, existing threads, and file tabs remain unchanged.
 
 #### MVP acceptance scenario
 

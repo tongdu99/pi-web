@@ -1369,14 +1369,20 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const handleSend = useCallback(async (message: string, images?: AttachedImage[], liveDocRequest?: LiveDocPromptRequest) => {
     const trimmedMessage = message.trim();
     if (!trimmedMessage && !images?.length) return;
+    // Composer submissions are recoverable drafts. Host-generated Live Doc
+    // prompts are actions, so restoring their synthetic text would overwrite
+    // or pollute the user's real draft after a rejection.
+    const restoreRejectedSubmission = () => {
+      if (!liveDocRequest) restoreSubmission(message, images, composerDraftKey);
+    };
     // Reaching the composer already required attaching, but a detach can race
     // an in-flight submission.
     if (!isNew && attachStateRef.current !== "attached" && !(await attach())) {
-      restoreSubmission(message, images, composerDraftKey);
+      restoreRejectedSubmission();
       return;
     }
     if (agentRunningRef.current || bashRunningRef.current) {
-      restoreSubmission(message, images, composerDraftKey);
+      restoreRejectedSubmission();
       return;
     }
     const isSlashCommandPrompt = !images?.length && trimmedMessage.startsWith("/");
@@ -1386,7 +1392,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       const isExcluded = trimmedMessage.startsWith("!!");
       const bashCmd = (isExcluded ? trimmedMessage.slice(2) : trimmedMessage.slice(1)).trim();
       if (!bashCmd) {
-        restoreSubmission(message, images, composerDraftKey);
+        restoreRejectedSubmission();
         return;
       }
       await executeBashRef.current?.(bashCmd, isExcluded);
@@ -1481,7 +1487,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           : [...prev.slice(0, optimisticIndex), ...prev.slice(optimisticIndex + 1)];
       });
       addNotice({ type: "error", message: e instanceof Error ? e.message : String(e) });
-      restoreSubmission(message, images, composerDraftKey);
+      restoreRejectedSubmission();
       optimisticUserMessageKeyRef.current = null;
       // Rejection only describes this submission. Another tab or an event we
       // missed may still have a real run active for the same session, so keep

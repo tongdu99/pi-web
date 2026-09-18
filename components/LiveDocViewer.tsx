@@ -39,7 +39,11 @@ export function LiveDocViewer({ docId, headRevisionId, refreshKey, onChanged, on
     onChanged?.(result.doc);
   }, [docId, onChanged]);
 
-  useEffect(() => { void load().catch((cause) => setError(cause instanceof Error ? cause.message : String(cause))); }, [load, headRevisionId, refreshKey]);
+  useEffect(() => {
+    setDoc((current) => current?.id === docId ? current : null);
+    setSelectionAction(null);
+    void load().catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
+  }, [docId, headRevisionId, load, refreshKey]);
 
   const saveTitle = useCallback(async () => {
     if (!doc || !title.trim() || title.trim() === doc.title) {
