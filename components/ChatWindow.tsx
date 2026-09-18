@@ -1154,7 +1154,8 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
                     liveDocs={liveDocs}
                     defaultLiveDocId={defaultLiveDocId}
                     onLiveDocTargetChange={onDefaultLiveDocChange}
-                    onAddToLiveDoc={sessionBusy || isNew || attachState !== "attached" ? undefined : handleAddToLiveDoc}
+                    onAddToLiveDoc={isNew ? undefined : handleAddToLiveDoc}
+                    liveDocUpdateDisabled={sessionBusy}
                     showTimestamp={showTimestamp}
                     prevTimestamp={idx > 0 ? (messages[idx - 1] as AgentMessage & { timestamp?: number }).timestamp : undefined}
                     sessionId={session?.id ?? sessionIdRef.current ?? undefined}
