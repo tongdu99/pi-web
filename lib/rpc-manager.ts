@@ -916,7 +916,9 @@ export class AgentSessionWrapper {
         if (typeof this.inner.bindExtensions !== "function") {
           this.inner.extensionRunner.setUIContext?.(this.createExtensionUiContext(), "rpc");
         }
-        this.inner.setActiveToolsByName(this.inner.getActiveToolNames().filter((name) => name !== LIVE_DOC_UPDATE_TOOL));
+        if (typeof this.inner.getActiveToolNames === "function" && typeof this.inner.setActiveToolsByName === "function") {
+          this.inner.setActiveToolsByName(this.inner.getActiveToolNames().filter((name) => name !== LIVE_DOC_UPDATE_TOOL));
+        }
         this.applyForcedEmptySystemPrompt();
         invalidateModelsCache();
         return { success: true };
