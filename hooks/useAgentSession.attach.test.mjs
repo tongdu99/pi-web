@@ -57,9 +57,11 @@ test("sending attaches first and restores the draft when it cannot", async () =>
   const source = await hookSource();
   const send = source.slice(source.indexOf("const handleSend = useCallback"));
 
+  assert.match(send.slice(0, 900), /const restoreRejectedSubmission = \(\) =>/);
+  assert.match(send.slice(0, 900), /if \(!liveDocRequest\) restoreSubmission/);
   assert.match(
-    send.slice(0, 700),
-    /if \(!isNew && attachStateRef\.current !== "attached" && !\(await attach\(\)\)\) \{\s*restoreSubmission/,
+    send.slice(0, 900),
+    /if \(!isNew && attachStateRef\.current !== "attached" && !\(await attach\(\)\)\) \{\s*restoreRejectedSubmission\(\)/,
   );
 });
 
