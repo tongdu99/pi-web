@@ -139,9 +139,9 @@ export function LiveDocViewer({ docId, headRevisionId, refreshKey, onChanged, on
                 onMouseLeave={() => setHoveredSectionId((current) => current === section.id ? null : current)}
                 onMouseUp={(event) => captureSelection(section, event)}
                 style={{
-                  position: "relative", margin: "0 -10px 8px", padding: "8px 10px 28px",
-                  border: `1px solid ${sectionHovered ? "color-mix(in srgb, #a855f7 38%, var(--border))" : "transparent"}`,
-                  borderRadius: 7, transition: "border-color 0.12s, background 0.12s",
+                  position: "relative", margin: 0, padding: 0,
+                  outline: sectionHovered ? "1px solid color-mix(in srgb, #a855f7 38%, var(--border))" : "1px solid transparent",
+                  outlineOffset: 4, borderRadius: 5, transition: "outline-color 0.12s, background 0.12s",
                   background: sectionHovered ? "color-mix(in srgb, #a855f7 3%, transparent)" : "transparent",
                 }}
               >
@@ -152,7 +152,7 @@ export function LiveDocViewer({ docId, headRevisionId, refreshKey, onChanged, on
                     onClick={() => onStartDiscussion(section, section.markdown)}
                     title="Start Live Update Discussion"
                     style={{
-                      ...smallButtonStyle, position: "absolute", bottom: 5, right: 7,
+                      ...smallButtonStyle, position: "absolute", bottom: 0, right: 0, transform: "translateY(50%)",
                       opacity: sectionHovered ? 1 : 0, pointerEvents: sectionHovered ? "auto" : "none",
                       color: "#a855f7", borderColor: "color-mix(in srgb, #a855f7 45%, var(--border))",
                       transition: "opacity 0.12s, color 0.12s",

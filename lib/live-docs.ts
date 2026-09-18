@@ -266,8 +266,14 @@ export async function updateLiveDoc(id: string, input: UpdateLiveDocInput, root?
       if (index === -1) throw new Error("The selected live doc section no longer exists");
       sections = head.sections.map((section) => ({ ...section }));
       const replacement = validateContent(input.replacementMarkdown).trim();
-      if (replacement) sections[index] = { id: input.sectionId, markdown: replacement };
-      else sections.splice(index, 1);
+      if (replacement) {
+        // A regional revision may legitimately introduce another heading. Turn
+        // each heading boundary into an addressable section instead of keeping
+        // the new subsection trapped inside the original target. The first
+        // replacement chunk retains the bound section's stable identity.
+        const replacementSections = splitLiveDocSections(replacement, [sections[index]]);
+        sections.splice(index, 1, ...replacementSections);
+      } else sections.splice(index, 1);
     } else {
       sections = splitLiveDocSections(input.replacementMarkdown, head.sections);
     }
