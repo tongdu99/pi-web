@@ -205,14 +205,18 @@ const PLAIN_TEXT_THEME = new PlainTextTheme();
 const CUSTOM_UI_KEYBINDINGS = new TuiKeybindingsManager(TUI_KEYBINDINGS);
 
 function withExtensionTools(session: AgentSessionLike, toolNames: string[]): string[] {
-  if (toolNames.length === 0) return [];
+  if (toolNames.length === 0) return [LIVE_DOC_UPDATE_TOOL];
 
   const codingToolNames = new Set(CODING_TOOL_NAMES);
   const extensionToolNames = session
     .getAllTools()
     .map((t) => t.name)
-    .filter((name) => !codingToolNames.has(name) && name !== LIVE_DOC_UPDATE_TOOL);
+    .filter((name) => !codingToolNames.has(name));
 
+  // live_doc_update is host-bound: its execute method rejects unless an
+  // explicit Live Doc request has installed a server-side binding. Keep it in
+  // the stable tool surface so providers that snapshot tools before prompt
+  // admission can still call it during a later live_doc_prompt.
   return [...new Set([...toolNames, ...extensionToolNames])];
 }
 
@@ -286,6 +290,11 @@ export class AgentSessionWrapper {
 
   isAlive(): boolean {
     return this._alive;
+  }
+
+  hasActiveTool(name: string): boolean {
+    return typeof this.inner.getActiveToolNames === "function"
+      && this.inner.getActiveToolNames().includes(name);
   }
 
   /**
@@ -514,7 +523,6 @@ export class AgentSessionWrapper {
           const promptImages = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
           const streamingBehavior = command.streamingBehavior as "steer" | "followUp" | undefined;
           let liveDocBinding: ActiveLiveDocBinding | null = null;
-          let previousActiveTools: string[] | null = null;
           if (type === "live_doc_prompt") {
             if (this.inner.isStreaming || this.pendingPromptCount > 0 || streamingBehavior) {
               throw new Error("Cannot start a Live Doc update while the session is busy");
@@ -545,8 +553,9 @@ export class AgentSessionWrapper {
               this.inner.agent.state.messages = this.inner.sessionManager.buildSessionContext().messages;
             }
             setActiveLiveDocBinding(liveDocBinding);
-            previousActiveTools = this.inner.getActiveToolNames();
-            this.inner.setActiveToolsByName([...new Set([...previousActiveTools, LIVE_DOC_UPDATE_TOOL])]);
+            // Defensive for wrappers created before the Live Docs feature was
+            // loaded. New/reloaded sessions keep this host-bound tool active.
+            this.inner.setActiveToolsByName([...new Set([...this.inner.getActiveToolNames(), LIVE_DOC_UPDATE_TOOL])]);
           }
           let preflightAccepted = false;
           let preflightSettled = false;
@@ -571,7 +580,6 @@ export class AgentSessionWrapper {
             promptSettled = true;
             this.pendingPromptCount = Math.max(0, this.pendingPromptCount - 1);
             if (liveDocBinding) clearActiveLiveDocBinding(liveDocBinding.sessionId, liveDocBinding.requestId);
-            if (previousActiveTools) this.inner.setActiveToolsByName(previousActiveTools);
             this.resetIdleTimer();
             notifyRunningChange();
           };
@@ -917,7 +925,7 @@ export class AgentSessionWrapper {
           this.inner.extensionRunner.setUIContext?.(this.createExtensionUiContext(), "rpc");
         }
         if (typeof this.inner.getActiveToolNames === "function" && typeof this.inner.setActiveToolsByName === "function") {
-          this.inner.setActiveToolsByName(this.inner.getActiveToolNames().filter((name) => name !== LIVE_DOC_UPDATE_TOOL));
+          this.inner.setActiveToolsByName([...new Set([...this.inner.getActiveToolNames(), LIVE_DOC_UPDATE_TOOL])]);
         }
         this.applyForcedEmptySystemPrompt();
         invalidateModelsCache();
@@ -2162,12 +2170,10 @@ export async function startRpcSession(
     // If specific tool names were requested (non-empty), set the active tools to the
     // requested builtin coding tools PLUS all extension/package tools, so installed
     // extensions stay usable in Pi Web just like in the `pi` CLI.
-    if (toolNames && toolNames.length > 0) {
+    if (toolNames !== undefined) {
       inner.setActiveToolsByName(withExtensionTools(inner, toolNames));
     } else {
-      // The mutating Live Doc tool is available only for an explicitly bound
-      // live_doc_prompt, never for ordinary chat.
-      inner.setActiveToolsByName(inner.getActiveToolNames().filter((name) => name !== LIVE_DOC_UPDATE_TOOL));
+      inner.setActiveToolsByName([...new Set([...inner.getActiveToolNames(), LIVE_DOC_UPDATE_TOOL])]);
     }
 
     const wrapper = new AgentSessionWrapper(inner);

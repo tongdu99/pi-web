@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { resolveSessionPath } from "@/lib/session-reader";
 import { startRpcSession, getRpcSession } from "@/lib/rpc-manager";
+import { LIVE_DOC_UPDATE_TOOL } from "@/lib/live-doc-agent";
 
 // POST /api/agent/[id] - Send a command to an existing session
 export async function POST(
@@ -16,7 +17,17 @@ export async function POST(
     commandType = typeof body.type === "string" ? body.type : undefined;
 
     // Fast path: already-running session
-    const existing = getRpcSession(id);
+    let existing = getRpcSession(id);
+    let restoreAttachment = false;
+    if (existing?.isAlive() && body.type === "live_doc_prompt" && !existing.hasActiveTool?.(LIVE_DOC_UPDATE_TOOL)) {
+      // globalThis keeps wrappers alive across dev hot reloads and application
+      // upgrades. Recreate an older wrapper whose provider tool surface was
+      // built before Live Docs existed; activating a newly seen tool only at
+      // prompt admission is too late for providers that snapshot definitions.
+      restoreAttachment = existing.isAttached();
+      await existing.shutdown();
+      existing = undefined;
+    }
     if (existing?.isAlive()) {
       const result = await existing.send(body);
       promptAccepted = body.type === "prompt" || body.type === "live_doc_prompt";
@@ -33,7 +44,11 @@ export async function POST(
       }, { status: 404 });
     }
 
-    const { session } = await startRpcSession(id, filePath, undefined);
+    const { session } = await startRpcSession(id, filePath, undefined, restoreAttachment ? {
+      attach: true,
+      sessionStartEvent: { type: "session_start", reason: "resume" },
+    } : undefined);
+    if (restoreAttachment) await session.waitUntilReady();
     const result = await session.send(body);
     promptAccepted = body.type === "prompt" || body.type === "live_doc_prompt";
 

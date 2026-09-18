@@ -68,6 +68,10 @@ export function createLiveDocUpdateTool() {
     name: LIVE_DOC_UPDATE_TOOL,
     label: "Update Live Doc",
     description: "Commit the requested replacement Markdown to the Live Doc bound by Pi Web. The destination is enforced by the host.",
+    promptSnippet: "Update the Live Doc target bound to the current Pi Web request",
+    promptGuidelines: [
+      "Use live_doc_update when a Pi Web Live Update request asks you to change its bound document or section; the host validates the destination and rejects unbound calls.",
+    ],
     parameters: Type.Object({
       replacementMarkdown: Type.String({ description: "Complete replacement Markdown for the bound section or whole Live Doc" }),
       summary: Type.Optional(Type.String({ description: "Brief description of the revision" })),
