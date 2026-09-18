@@ -112,8 +112,10 @@ export function splitLiveDocSections(markdown: string, previous: LiveDocSection[
   const used = new Set<string>();
   return chunks.map((chunk, index) => {
     const byHeading = headingKey(chunk);
-    const candidate = (byHeading ? previousByHeading.get(byHeading) : undefined)
-      ?? previous[index];
+    // Heading sections preserve identity only by the same heading, never by
+    // position: inserting a new subheading must not steal the ID (and linked
+    // discussions) from the section that previously occupied that index.
+    const candidate = byHeading ? previousByHeading.get(byHeading) : previous[index];
     const id = candidate && !used.has(candidate.id) ? candidate.id : randomUUID();
     used.add(id);
     return { id, markdown: chunk };
