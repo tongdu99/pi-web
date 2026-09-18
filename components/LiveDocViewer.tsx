@@ -102,6 +102,15 @@ export function LiveDocViewer({ docId, headRevisionId, refreshKey, focusedSectio
     finally { setRestoring(null); }
   };
 
+  const switchDiscussionTarget = (section: LiveDocSection, event: React.MouseEvent<HTMLDivElement>) => {
+    if (!focusedSectionId || section.id === focusedSectionId || !onStartDiscussion) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.closest("a, button, input, textarea, select, summary")) return;
+    const selection = window.getSelection();
+    if (selection && !selection.isCollapsed) return;
+    onStartDiscussion(section, section.markdown);
+  };
+
   const captureSelection = (section: LiveDocSection, event: React.MouseEvent<HTMLDivElement>) => {
     if (!onStartDiscussion) return;
     const selection = window.getSelection();
@@ -150,8 +159,11 @@ export function LiveDocViewer({ docId, headRevisionId, refreshKey, focusedSectio
                 onMouseEnter={() => setHoveredSectionId(section.id)}
                 onMouseLeave={() => setHoveredSectionId((current) => current === section.id ? null : current)}
                 onMouseUp={(event) => captureSelection(section, event)}
+                onClick={(event) => switchDiscussionTarget(section, event)}
+                title={focusedSectionId && section.id !== focusedSectionId ? "Click to switch the Live Update target" : undefined}
                 style={{
                   position: "relative", margin: 0, padding: 0,
+                  cursor: focusedSectionId && section.id !== focusedSectionId ? "pointer" : undefined,
                   outline: sectionFocused
                     ? `${focusedSectionActive ? 2 : 1}px solid color-mix(in srgb, #a855f7 72%, var(--border))`
                     : sectionHovered
@@ -169,7 +181,7 @@ export function LiveDocViewer({ docId, headRevisionId, refreshKey, focusedSectio
                 {onStartDiscussion && (
                   <button
                     type="button"
-                    onClick={() => onStartDiscussion(section, section.markdown)}
+                    onClick={(event) => { event.stopPropagation(); onStartDiscussion(section, section.markdown); }}
                     title="Start Live Update Discussion"
                     style={{
                       ...smallButtonStyle, position: "absolute", bottom: 0, right: 0, transform: "translateY(50%)",
