@@ -103,6 +103,30 @@ test("offers quoting for a complete assistant response", () => {
   assert.match(html, /A detailed answer/);
 });
 
+test("offers a completed assistant response to the selected Live Doc", () => {
+  const html = renderMessage({
+    role: "assistant",
+    provider: "openai",
+    model: "gpt-test",
+    content: [{ type: "text", text: "Review finding" }],
+  }, {
+    liveDocs: [{
+      id: "doc-12345678",
+      title: "PR Review.md",
+      format: "text/markdown",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      sessionIds: ["session-a"],
+      headRevisionId: "revision-1",
+    }],
+    defaultLiveDocId: "doc-12345678",
+    onAddToLiveDoc() {},
+  });
+
+  assert.match(html, /Add to Live Doc/);
+  assert.match(html, /PR Review\.md/);
+});
+
 test("places the model at the start of the response telemetry footer", () => {
   const html = renderMessage({
     role: "assistant",

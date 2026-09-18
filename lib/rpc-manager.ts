@@ -31,6 +31,16 @@ import {
   threadTitleFromMarkdown,
   type RestorableLeafSessionManager,
 } from "./discussion-threads";
+import {
+  buildLiveDocContext,
+  clearActiveLiveDocBinding,
+  createLiveDocUpdateTool,
+  LIVE_DOC_UPDATE_TOOL,
+  setActiveLiveDocBinding,
+  type ActiveLiveDocBinding,
+} from "./live-doc-agent";
+import { LIVE_DOC_CONTEXT_CUSTOM_TYPE, LIVE_DOC_THREAD_CUSTOM_TYPE } from "./live-doc-discussions";
+import { getLiveDoc } from "./live-docs";
 
 // ============================================================================
 // Types
@@ -201,7 +211,7 @@ function withExtensionTools(session: AgentSessionLike, toolNames: string[]): str
   const extensionToolNames = session
     .getAllTools()
     .map((t) => t.name)
-    .filter((name) => !codingToolNames.has(name));
+    .filter((name) => !codingToolNames.has(name) && name !== LIVE_DOC_UPDATE_TOOL);
 
   return [...new Set([...toolNames, ...extensionToolNames])];
 }
@@ -389,6 +399,7 @@ export class AgentSessionWrapper {
 
   private shouldWaitForExtensions(type: string): boolean {
     return type === "prompt"
+      || type === "live_doc_prompt"
       || type === "steer"
       || type === "follow_up"
       || type === "get_commands"
@@ -484,12 +495,13 @@ export class AgentSessionWrapper {
     const type = command.type as string;
     if (this.shouldWaitForExtensions(type)) await this.waitForExtensionsBound();
 
-    if (type === "prompt" || type === "steer" || type === "follow_up") {
+    if (type === "prompt" || type === "live_doc_prompt" || type === "steer" || type === "follow_up") {
       const imageError = validateAgentImages(command.images);
       if (imageError) throw new Error(imageError);
     }
 
     switch (type) {
+      case "live_doc_prompt":
       case "prompt": {
         // Serialize only admission. Once the preceding prompt has either
         // passed or failed preflight, the SDK can atomically decide whether
@@ -501,6 +513,41 @@ export class AgentSessionWrapper {
           }
           const promptImages = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
           const streamingBehavior = command.streamingBehavior as "steer" | "followUp" | undefined;
+          let liveDocBinding: ActiveLiveDocBinding | null = null;
+          let previousActiveTools: string[] | null = null;
+          if (type === "live_doc_prompt") {
+            if (this.inner.isStreaming || this.pendingPromptCount > 0 || streamingBehavior) {
+              throw new Error("Cannot start a Live Doc update while the session is busy");
+            }
+            const docId = typeof command.docId === "string" ? command.docId : "";
+            const expectedRevisionId = typeof command.expectedRevisionId === "string" ? command.expectedRevisionId : "";
+            const purpose = command.purpose === "discussion" ? "discussion" : "merge-response";
+            if (!docId || !expectedRevisionId) throw new Error("Live Doc target and revision are required");
+            liveDocBinding = {
+              requestId: typeof command.requestId === "string" ? command.requestId : randomUUID(),
+              sessionId: this.inner.sessionId,
+              docId,
+              expectedRevisionId,
+              ...(typeof command.sectionId === "string" ? { sectionId: command.sectionId } : {}),
+              ...(typeof command.selectedText === "string" ? { selectedText: command.selectedText.slice(0, 50_000) } : {}),
+              ...(typeof command.sourceMarkdown === "string" ? { sourceMarkdown: command.sourceMarkdown.slice(0, 200_000) } : {}),
+              ...(typeof command.discussionEntryId === "string" ? { discussionEntryId: command.discussionEntryId } : {}),
+              purpose,
+            };
+            const context = await buildLiveDocContext(liveDocBinding);
+            this.inner.sessionManager.appendCustomMessageEntry(
+              LIVE_DOC_CONTEXT_CUSTOM_TYPE,
+              context,
+              false,
+              { docId, sectionId: liveDocBinding.sectionId, requestId: liveDocBinding.requestId },
+            );
+            if (this.inner.agent.state) {
+              this.inner.agent.state.messages = this.inner.sessionManager.buildSessionContext().messages;
+            }
+            setActiveLiveDocBinding(liveDocBinding);
+            previousActiveTools = this.inner.getActiveToolNames();
+            this.inner.setActiveToolsByName([...new Set([...previousActiveTools, LIVE_DOC_UPDATE_TOOL])]);
+          }
           let preflightAccepted = false;
           let preflightSettled = false;
           let promptSettled = false;
@@ -523,6 +570,8 @@ export class AgentSessionWrapper {
             if (promptSettled) return;
             promptSettled = true;
             this.pendingPromptCount = Math.max(0, this.pendingPromptCount - 1);
+            if (liveDocBinding) clearActiveLiveDocBinding(liveDocBinding.sessionId, liveDocBinding.requestId);
+            if (previousActiveTools) this.inner.setActiveToolsByName(previousActiveTools);
             this.resetIdleTimer();
             notifyRunningChange();
           };
@@ -669,6 +718,34 @@ export class AgentSessionWrapper {
         }
         const result = await this.inner.navigateTree(command.targetId as string, {});
         return { cancelled: result.cancelled };
+      }
+
+      case "start_live_doc_thread": {
+        if (this.inner.isBashRunning || this.inner.isStreaming || this.pendingPromptCount > 0) {
+          throw new Error("Cannot start a Live Update Discussion while the session is busy");
+        }
+        const docId = typeof command.docId === "string" ? command.docId : "";
+        const sectionId = typeof command.sectionId === "string" ? command.sectionId : "";
+        const selectedText = typeof command.selectedText === "string" ? command.selectedText.trim().slice(0, 50_000) : "";
+        if (!docId || !sectionId) throw new Error("A Live Doc and section are required");
+        const doc = await getLiveDoc(docId);
+        if (!doc || !doc.sessionIds.includes(this.inner.sessionId)) throw new Error("Live Doc is not linked to this session");
+        const head = doc.revisions.find((revision) => revision.id === doc.headRevisionId);
+        if (!head?.sections.some((section) => section.id === sectionId)) throw new Error("The selected Live Doc section no longer exists");
+        const hostLeafId = this.inner.sessionManager.getLeafId();
+        const threadEntryId = this.inner.sessionManager.appendCustomEntry(LIVE_DOC_THREAD_CUSTOM_TYPE, {
+          version: 1,
+          docId,
+          sectionId,
+          selectedText,
+          hostLeafId,
+          status: "open",
+        });
+        if (this.inner.agent.state) {
+          this.inner.agent.state.messages = this.inner.sessionManager.buildSessionContext().messages;
+        }
+        invalidateSessionListCache();
+        return { cancelled: false, threadEntryId, hostLeafId };
       }
 
       case "start_thread": {
@@ -839,6 +916,7 @@ export class AgentSessionWrapper {
         if (typeof this.inner.bindExtensions !== "function") {
           this.inner.extensionRunner.setUIContext?.(this.createExtensionUiContext(), "rpc");
         }
+        this.inner.setActiveToolsByName(this.inner.getActiveToolNames().filter((name) => name !== LIVE_DOC_UPDATE_TOOL));
         this.applyForcedEmptySystemPrompt();
         invalidateModelsCache();
         return { success: true };
@@ -2009,7 +2087,10 @@ export async function startRpcSession(
       // tool registry — so they were unavailable in Pi Web sessions even though the
       // `pi` CLI keeps them. Leaving the allow-list unset lets the SDK register all
       // tools (and activate extension tools); we narrow the ACTIVE set below.
-      toolsOption = toolNames.length === 0 ? [] : undefined;
+      // Keep the host-only Live Doc tool registered even for the "no tools"
+      // preset; it is immediately deactivated below and enabled only for an
+      // explicit live_doc_prompt.
+      toolsOption = toolNames.length === 0 ? [LIVE_DOC_UPDATE_TOOL] : undefined;
     }
 
     // Build services first so extension-registered providers are available
@@ -2052,6 +2133,7 @@ export async function startRpcSession(
     const { session: inner } = await createAgentSessionFromServices({
       services,
       sessionManager,
+      customTools: [createLiveDocUpdateTool()],
       ...(sessionStartEvent ? { sessionStartEvent } : {}),
       ...(initial.model ? { model: initial.model } : {}),
       ...(initial.thinkingLevel ? { thinkingLevel: initial.thinkingLevel } : {}),
@@ -2080,6 +2162,10 @@ export async function startRpcSession(
     // extensions stay usable in Pi Web just like in the `pi` CLI.
     if (toolNames && toolNames.length > 0) {
       inner.setActiveToolsByName(withExtensionTools(inner, toolNames));
+    } else {
+      // The mutating Live Doc tool is available only for an explicitly bound
+      // live_doc_prompt, never for ordinary chat.
+      inner.setActiveToolsByName(inner.getActiveToolNames().filter((name) => name !== LIVE_DOC_UPDATE_TOOL));
     }
 
     const wrapper = new AgentSessionWrapper(inner);

@@ -36,6 +36,8 @@ import {
   type DiscussionThreadDescriptor,
 } from "@/lib/discussion-threads";
 import { DiscussionThreadPanel } from "./DiscussionThreadPanel";
+import type { LiveDocRecord, LiveDocSection, LiveDocSummary } from "@/lib/live-docs";
+import { collectLiveDocThreads, findActiveLiveDocThread, type LiveDocThreadDescriptor } from "@/lib/live-doc-discussions";
 
 interface Props {
   session: SessionInfo | null;
@@ -64,6 +66,12 @@ interface Props {
   onOpenFile?: (filePath: string, lineRange?: FileLineRange) => void;
   onOpenChangedFile?: (filePath: string) => void;
   onOpenUrl?: (url: string) => void;
+  liveDocs?: LiveDocSummary[];
+  defaultLiveDocId?: string | null;
+  onDefaultLiveDocChange?: (docId: string) => void;
+  onCreateLiveDoc?: () => Promise<LiveDocRecord | null>;
+  onOpenLiveDoc?: (doc: LiveDocSummary | LiveDocRecord) => void;
+  onLiveDocDiscussionHandlerChange?: (handler: ((docId: string, section: LiveDocSection, selectedText: string) => void) | null) => void;
   /** Completion sound state + controls, owned by AppShell so tasks finishing in
    *  a non-active workspace can still ring. */
   soundEnabled?: boolean;
@@ -317,7 +325,7 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, defaultExpanded = fa
   );
 }
 
-export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionDraftKey, onAgentEnd, onAttentionNeeded, onSessionCreated, onSessionForked, onSessionSwitched, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemPromptLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, sessionStatusControl, onContextUsageChange, onAttachStateChange, onDetachHandlerChange, onOpenFile, onOpenChangedFile, onOpenUrl, soundEnabled = true, onSoundToggle, playDoneSound = () => {}, unlockAudio }: Props) {
+export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionDraftKey, onAgentEnd, onAttentionNeeded, onSessionCreated, onSessionForked, onSessionSwitched, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemPromptLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, sessionStatusControl, onContextUsageChange, onAttachStateChange, onDetachHandlerChange, onOpenFile, onOpenChangedFile, onOpenUrl, liveDocs = [], defaultLiveDocId = null, onDefaultLiveDocChange, onCreateLiveDoc, onOpenLiveDoc, onLiveDocDiscussionHandlerChange, soundEnabled = true, onSoundToggle, playDoneSound = () => {}, unlockAudio }: Props) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
 
@@ -353,6 +361,12 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
     title: string;
   } | null>(null);
   const [activeThreadHint, setActiveThreadHint] = useState<string | null>(null);
+  const [pendingLiveDocThread, setPendingLiveDocThread] = useState<{
+    docId: string;
+    sectionId: string;
+    selectedText: string;
+  } | null>(null);
+  const [activeLiveDocThreadHint, setActiveLiveDocThreadHint] = useState<string | null>(null);
   const [expandedInlineThreadId, setExpandedInlineThreadId] = useState<string | null>(null);
   const [threadHostSnapshot, setThreadHostSnapshot] = useState<{
     threadId: string;
@@ -378,8 +392,8 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
     attachState, attachConflict, attachError,
     attach, detach,
     sessionIdRef, messagesEndRef, scrollContainerRef,
-    handleSend, handleAbort, handleFork, handleNavigate, handleStartThread, handleLeafChange, handleModelChange,
-    handleCompact, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleAbortCompaction,
+    handleSend, handleAbort, handleFork, handleNavigate, handleStartThread, handleStartLiveDocThread, handleLeafChange, handleModelChange,
+    handleCompact, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleLiveDocPrompt, handleAbortCompaction,
     handleRecallQueue,
     handleBuiltinSlashCommand,
     handleToolPresetChange, handleThinkingLevelChange, loadSlashCommands,
@@ -389,6 +403,13 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
   });
   const sessionBusy = agentRunning || bashRunning;
   const discussionThreads = useMemo(() => collectDiscussionThreads(data?.tree ?? []), [data?.tree]);
+  const liveDocThreads = useMemo(() => collectLiveDocThreads(data?.tree ?? []), [data?.tree]);
+  const activeLiveDocThreadFromTree = useMemo(
+    () => findActiveLiveDocThread(liveDocThreads, activeLeafId),
+    [activeLeafId, liveDocThreads],
+  );
+  const activeLiveDocThread = activeLiveDocThreadFromTree
+    ?? (activeLiveDocThreadHint ? liveDocThreads.find((thread) => thread.id === activeLiveDocThreadHint) ?? null : null);
   const threadsBySource = useMemo(() => groupDiscussionThreadsBySource(discussionThreads), [discussionThreads]);
   const activeThreadFromTree = useMemo(
     () => findActiveDiscussionThread(discussionThreads, activeLeafId),
@@ -406,8 +427,15 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
   }, [activeThreadFromTree?.id, activeThreadHint]);
 
   useEffect(() => {
+    if (!activeLiveDocThreadHint) return;
+    if (activeLiveDocThreadFromTree?.id !== activeLiveDocThreadHint) setActiveLiveDocThreadHint(null);
+  }, [activeLiveDocThreadFromTree?.id, activeLiveDocThreadHint]);
+
+  useEffect(() => {
     setPendingThread(null);
     setActiveThreadHint(null);
+    setPendingLiveDocThread(null);
+    setActiveLiveDocThreadHint(null);
     setExpandedInlineThreadId(null);
     setThreadHostSnapshot(null);
     setLoadedThreadHost(null);
@@ -495,7 +523,89 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
     requestAnimationFrame(() => chatInputRef?.current?.focus());
   }, [activeThread, chatInputRef, isNew, leaveActiveThread, pendingThread, sessionBusy]);
 
+  const leaveActiveLiveDocThread = useCallback(async (thread: LiveDocThreadDescriptor) => {
+    if (!thread.hostLeafId) return false;
+    const returned = await handleLeafChange(thread.hostLeafId);
+    setActiveLiveDocThreadHint(null);
+    return returned;
+  }, [handleLeafChange]);
+
+  const beginLiveDocDiscussion = useCallback(async (docId: string, section: LiveDocSection, selectedText: string) => {
+    if (sessionBusy || isNew) return;
+    if (activeThread && !(await leaveActiveThread(activeThread))) return;
+    if (activeLiveDocThread && !(await leaveActiveLiveDocThread(activeLiveDocThread))) return;
+    setPendingLiveDocThread({ docId, sectionId: section.id, selectedText });
+    onDefaultLiveDocChange?.(docId);
+    const doc = liveDocs.find((candidate) => candidate.id === docId);
+    if (doc) onOpenLiveDoc?.(doc);
+    chatInputRef?.current?.addQuote(selectedText || section.markdown);
+    requestAnimationFrame(() => chatInputRef?.current?.focus());
+  }, [activeLiveDocThread, activeThread, chatInputRef, isNew, leaveActiveLiveDocThread, leaveActiveThread, liveDocs, onDefaultLiveDocChange, onOpenLiveDoc, sessionBusy]);
+
+  useEffect(() => {
+    onLiveDocDiscussionHandlerChange?.(beginLiveDocDiscussion);
+    return () => onLiveDocDiscussionHandlerChange?.(null);
+  }, [beginLiveDocDiscussion, onLiveDocDiscussionHandlerChange]);
+
+  const handleAddToLiveDoc = useCallback(async (sourceMarkdown: string, requestedDocId: string | null) => {
+    if (sessionBusy || isNew) return;
+    let doc = liveDocs.find((candidate) => candidate.id === requestedDocId)
+      ?? liveDocs.find((candidate) => candidate.id === defaultLiveDocId)
+      ?? null;
+    if (!doc && onCreateLiveDoc) doc = await onCreateLiveDoc();
+    if (!doc) return;
+    onDefaultLiveDocChange?.(doc.id);
+    onOpenLiveDoc?.(doc);
+    await handleLiveDocPrompt(`Add this response to ${doc.title}.`, {
+      docId: doc.id,
+      expectedRevisionId: doc.headRevisionId,
+      purpose: "merge-response",
+      sourceMarkdown,
+    });
+  }, [defaultLiveDocId, handleLiveDocPrompt, isNew, liveDocs, onCreateLiveDoc, onDefaultLiveDocChange, onOpenLiveDoc, sessionBusy]);
+
   const handleConversationSend = useCallback(async (message: string, images?: AttachedImage[]) => {
+    if (pendingLiveDocThread) {
+      const doc = liveDocs.find((candidate) => candidate.id === pendingLiveDocThread.docId);
+      if (!doc) {
+        chatInputRef?.current?.restoreSubmission(message, images);
+        return;
+      }
+      const result = await handleStartLiveDocThread(doc.id, pendingLiveDocThread.sectionId, pendingLiveDocThread.selectedText);
+      if (!result) {
+        chatInputRef?.current?.restoreSubmission(message, images);
+        return;
+      }
+      setActiveLiveDocThreadHint(result.threadEntryId);
+      setPendingLiveDocThread(null);
+      await handleLiveDocPrompt(message, {
+        docId: doc.id,
+        expectedRevisionId: doc.headRevisionId,
+        purpose: "discussion",
+        sectionId: pendingLiveDocThread.sectionId,
+        selectedText: pendingLiveDocThread.selectedText,
+        discussionEntryId: result.threadEntryId,
+      }, images);
+      return;
+    }
+
+    if (activeLiveDocThread) {
+      const doc = liveDocs.find((candidate) => candidate.id === activeLiveDocThread.docId);
+      if (!doc) {
+        chatInputRef?.current?.restoreSubmission(message, images);
+        return;
+      }
+      await handleLiveDocPrompt(message, {
+        docId: doc.id,
+        expectedRevisionId: doc.headRevisionId,
+        purpose: "discussion",
+        sectionId: activeLiveDocThread.sectionId,
+        selectedText: activeLiveDocThread.selectedText,
+        discussionEntryId: activeLiveDocThread.id,
+      }, images);
+      return;
+    }
+
     if (!pendingThread) {
       await handleSend(message, images);
       return;
@@ -518,7 +628,7 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
     setExpandedInlineThreadId(result.threadEntryId);
     setPendingThread(null);
     await handleSend(message, images);
-  }, [activeEntryIds, activeMessages, chatInputRef, handleSend, handleStartThread, pendingThread]);
+  }, [activeEntryIds, activeLiveDocThread, activeMessages, chatInputRef, handleLiveDocPrompt, handleSend, handleStartLiveDocThread, handleStartThread, liveDocs, pendingLiveDocThread, pendingThread]);
 
   const handleContinueThread = useCallback(async (thread: DiscussionThreadDescriptor) => {
     if (sessionBusy) return;
@@ -534,6 +644,11 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
     if (!activeThread || sessionBusy) return;
     await leaveActiveThread(activeThread);
   }, [activeThread, leaveActiveThread, sessionBusy]);
+
+  const handleReturnFromLiveDoc = useCallback(async () => {
+    if (!activeLiveDocThread || sessionBusy) return;
+    await leaveActiveLiveDocThread(activeLiveDocThread);
+  }, [activeLiveDocThread, leaveActiveLiveDocThread, sessionBusy]);
 
   useEffect(() => {
     if (!extensionDialog || soundedExtensionDialogIdRef.current === extensionDialog.id) return;
@@ -741,16 +856,24 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
       onSoundToggle={onSoundToggle}
       onAudioUnlock={unlockAudio}
       sessionStatusControl={sessionStatusControl}
-      conversationTarget={pendingThread
-        ? { label: pendingThread.title, active: false }
-        : activeThread
-          ? { label: activeThread.title, active: true }
-          : null}
-      onConversationTargetClear={pendingThread
-        ? () => setPendingThread(null)
-        : activeThread
-          ? () => { void handleReturnToMain(); }
-          : undefined}
+      conversationTarget={pendingLiveDocThread
+        ? { label: `Live update · ${liveDocs.find((doc) => doc.id === pendingLiveDocThread.docId)?.title ?? "Live Doc"}`, active: false, tone: "live-doc" }
+        : activeLiveDocThread
+          ? { label: `Live update · ${liveDocs.find((doc) => doc.id === activeLiveDocThread.docId)?.title ?? "Live Doc"}`, active: true, tone: "live-doc" }
+          : pendingThread
+            ? { label: pendingThread.title, active: false }
+            : activeThread
+              ? { label: activeThread.title, active: true }
+              : null}
+      onConversationTargetClear={pendingLiveDocThread
+        ? () => setPendingLiveDocThread(null)
+        : activeLiveDocThread
+          ? () => { void handleReturnFromLiveDoc(); }
+          : pendingThread
+            ? () => setPendingThread(null)
+            : activeThread
+              ? () => { void handleReturnToMain(); }
+              : undefined}
       draftKey={session?.id ?? newSessionDraftKey ?? undefined}
       cwd={session?.cwd ?? newSessionCwd}
     />
@@ -1028,6 +1151,10 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
                     onQuote={sessionBusy || attachState !== "attached" ? undefined : handleQuote}
                     onDiscuss={sessionBusy || isNew || pendingThread || attachState !== "attached" ? undefined : handleDiscuss}
                     discussionThreadPanels={inlineThreadPanels}
+                    liveDocs={liveDocs}
+                    defaultLiveDocId={defaultLiveDocId}
+                    onLiveDocTargetChange={onDefaultLiveDocChange}
+                    onAddToLiveDoc={sessionBusy || isNew || attachState !== "attached" ? undefined : handleAddToLiveDoc}
                     showTimestamp={showTimestamp}
                     prevTimestamp={idx > 0 ? (messages[idx - 1] as AgentMessage & { timestamp?: number }).timestamp : undefined}
                     sessionId={session?.id ?? sessionIdRef.current ?? undefined}

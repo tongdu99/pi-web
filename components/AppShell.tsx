@@ -190,6 +190,10 @@ export function AppShell() {
     reclampRightPanelWidth();
   }, [reclampRightPanelWidth, reclampSidebarWidth, rightPanelOpen]);
   const chatInputRef = useRef<ChatInputHandle | null>(null);
+  const liveDocDiscussionHandlerRef = useRef<((docId: string, section: import("@/lib/live-docs").LiveDocSection, selectedText: string) => void) | null>(null);
+  const handleLiveDocDiscussionHandlerChange = useCallback((handler: ((docId: string, section: import("@/lib/live-docs").LiveDocSection, selectedText: string) => void) | null) => {
+    liveDocDiscussionHandlerRef.current = handler;
+  }, []);
   const topBarRef = useRef<HTMLDivElement>(null);
   const mobileToolbarRef = useRef<HTMLDivElement>(null);
   const languageBtnRef = useRef<HTMLButtonElement>(null);
@@ -889,12 +893,14 @@ export function AppShell() {
     if (isMobile) setSidebarOpen(false);
   }, [isMobile, setDefaultDocId]);
 
-  const handleCreateLiveDoc = useCallback(async () => {
+  const handleCreateLiveDoc = useCallback(async (): Promise<LiveDocRecord | null> => {
     try {
       const doc = await createLiveDoc();
       handleOpenLiveDoc(doc);
+      return doc;
     } catch (error) {
       console.error("Failed to create Live Doc:", error);
+      return null;
     }
   }, [createLiveDoc, handleOpenLiveDoc]);
 
@@ -2342,6 +2348,12 @@ export function AppShell() {
               onOpenFile={handleOpenLinkedFile}
               onOpenChangedFile={handleOpenChangedFile}
               onOpenUrl={handleOpenWebUrl}
+              liveDocs={liveDocs}
+              defaultLiveDocId={defaultDocId}
+              onDefaultLiveDocChange={setDefaultDocId}
+              onCreateLiveDoc={handleCreateLiveDoc}
+              onOpenLiveDoc={handleOpenLiveDoc}
+              onLiveDocDiscussionHandlerChange={handleLiveDocDiscussionHandlerChange}
               soundEnabled={soundEnabled}
               onSoundToggle={onSoundToggle}
               playDoneSound={playDoneSound}
@@ -2502,6 +2514,9 @@ export function AppShell() {
               headRevisionId={liveDocs.find((doc) => doc.id === activeFileTab.liveDocId)?.headRevisionId}
               refreshKey={liveDocs.find((doc) => doc.id === activeFileTab.liveDocId)?.updatedAt}
               onChanged={handleLiveDocChanged}
+              onStartDiscussion={(section, selectedText) => {
+                liveDocDiscussionHandlerRef.current?.(activeFileTab.liveDocId!, section, selectedText);
+              }}
             />
           ) : activeFileTab?.filePath ? (
             <FileViewer

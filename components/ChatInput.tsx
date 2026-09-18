@@ -82,7 +82,7 @@ interface Props {
   onAudioUnlock?: () => void;
   /** Session token, cost, and context status supplied by the application shell. */
   sessionStatusControl?: React.ReactNode;
-  conversationTarget?: { label: string; active: boolean } | null;
+  conversationTarget?: { label: string; active: boolean; tone?: "thread" | "live-doc" } | null;
   onConversationTargetClear?: () => void;
   draftKey?: string;
   /** Session working directory — enables the @ file autocomplete menu */
@@ -1628,14 +1628,16 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             {compactError}
           </div>
         )}
-        {conversationTarget && (
+        {conversationTarget && (() => {
+          const targetColor = conversationTarget.tone === "live-doc" ? "#a855f7" : "var(--accent)";
+          return (
           <div style={{
             display: "flex", alignItems: "center", gap: 8, marginBottom: 7,
-            padding: "6px 8px", border: "1px solid color-mix(in srgb, var(--accent) 35%, var(--border))",
-            borderRadius: 7, background: "color-mix(in srgb, var(--accent) 7%, var(--bg-panel))",
+            padding: "6px 8px", border: `1px solid color-mix(in srgb, ${targetColor} 35%, var(--border))`,
+            borderRadius: 7, background: `color-mix(in srgb, ${targetColor} 7%, var(--bg-panel))`,
             color: "var(--text-muted)", fontSize: 11,
           }}>
-            <span aria-hidden="true" style={{ color: "var(--accent)" }}>↳</span>
+            <span aria-hidden="true" style={{ color: targetColor }}>↳</span>
             <span style={{ minWidth: 0, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {t(conversationTarget.active ? "chat.replyingInThread" : "chat.startingThread", { title: conversationTarget.label })}
             </span>
@@ -1643,13 +1645,14 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               <button
                 type="button"
                 onClick={onConversationTargetClear}
-                style={{ padding: "2px 6px", border: 0, borderRadius: 4, background: "transparent", color: conversationTarget.active ? "var(--accent)" : "var(--text-dim)", cursor: "pointer", fontSize: 11 }}
+                style={{ padding: "2px 6px", border: 0, borderRadius: 4, background: "transparent", color: conversationTarget.active ? targetColor : "var(--text-dim)", cursor: "pointer", fontSize: 11 }}
               >
                 {t(conversationTarget.active ? "chat.returnToMain" : "chat.replyInMain")}
               </button>
             )}
           </div>
-        )}
+          );
+        })()}
 
         {/* Image previews */}
         {attachedImages.length > 0 && (
@@ -1686,7 +1689,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         {quotes.length > 0 && (
           <div aria-label={t("chat.quotedSections")} style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 7 }}>
             {quotes.map((quote, index) => (
-              <div key={quote.id} style={{ display: "flex", gap: 7, padding: "7px 8px 7px 10px", border: "1px solid var(--border)", borderLeft: "3px solid var(--accent)", borderRadius: 7, background: "var(--bg-panel)", maxHeight: 150, overflow: "auto" }}>
+              <div key={quote.id} style={{ display: "flex", gap: 7, padding: "7px 8px 7px 10px", border: "1px solid var(--border)", borderLeft: `3px solid ${conversationTarget?.tone === "live-doc" ? "#a855f7" : "var(--accent)"}`, borderRadius: 7, background: "var(--bg-panel)", maxHeight: 150, overflow: "auto" }}>
                 <div style={{ minWidth: 0, flex: 1, fontSize: 12, lineHeight: 1.45 }}>
                   <MarkdownBody cwd={cwd ?? undefined}>{quote.markdown}</MarkdownBody>
                 </div>

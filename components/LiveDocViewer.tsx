@@ -130,7 +130,7 @@ export function LiveDocViewer({ docId, headRevisionId, refreshKey, onChanged, on
               <MarkdownBody>{section.markdown}</MarkdownBody>
               {onStartDiscussion && (
                 <button type="button" onClick={() => onStartDiscussion(section, section.markdown)} title="Start Live Update Discussion"
-                  style={{ ...smallButtonStyle, position: "absolute", top: 0, right: 0, opacity: 0.55 }}>↳ Live update</button>
+                  style={{ ...smallButtonStyle, position: "absolute", top: 0, right: 0, opacity: 0.7, color: "#a855f7", borderColor: "color-mix(in srgb, #a855f7 45%, var(--border))" }}>↳ Live update</button>
               )}
             </div>
           ))}
