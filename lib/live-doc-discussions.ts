@@ -1,4 +1,5 @@
 import type { SessionTreeNode } from "./types";
+import { liveDocSectionPreview } from "./live-doc-target";
 
 export const LIVE_DOC_THREAD_CUSTOM_TYPE = "pi-web.live-doc-thread";
 export const LIVE_DOC_CONTEXT_CUSTOM_TYPE = "pi-web.live-doc-context";
@@ -7,6 +8,7 @@ export interface LiveDocThreadMetadata {
   version: 1;
   docId: string;
   sectionId: string;
+  sectionLabel: string;
   selectedText: string;
   hostLeafId: string | null;
   status: "open";
@@ -30,6 +32,9 @@ export function parseLiveDocThreadMetadata(value: unknown): LiveDocThreadMetadat
     version: 1,
     docId: value.docId,
     sectionId: value.sectionId,
+    sectionLabel: typeof value.sectionLabel === "string" && value.sectionLabel.trim()
+      ? value.sectionLabel.trim()
+      : liveDocSectionPreview(value.selectedText),
     selectedText: value.selectedText,
     hostLeafId: value.hostLeafId,
     status: "open",

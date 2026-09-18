@@ -56,7 +56,7 @@ import type { ProjectTrustStatus } from "@/lib/api-types";
 import type { ChatInputHandle } from "./ChatInput";
 import type { SessionStatsInfo } from "@/lib/pi-types";
 import type { FileViewerState } from "@/lib/file-viewer-state";
-import type { LiveDocRecord, LiveDocSummary } from "@/lib/live-docs";
+import type { LiveDocRecord, LiveDocSection, LiveDocSummary } from "@/lib/live-docs";
 import { useLiveDocs } from "@/hooks/useLiveDocs";
 import { liveDocsEnabled } from "@/lib/live-doc-feature";
 
@@ -192,8 +192,14 @@ export function AppShell() {
     reclampRightPanelWidth();
   }, [reclampRightPanelWidth, reclampSidebarWidth, rightPanelOpen]);
   const chatInputRef = useRef<ChatInputHandle | null>(null);
-  const liveDocDiscussionHandlerRef = useRef<((docId: string, section: import("@/lib/live-docs").LiveDocSection, selectedText: string) => void) | null>(null);
-  const handleLiveDocDiscussionHandlerChange = useCallback((handler: ((docId: string, section: import("@/lib/live-docs").LiveDocSection, selectedText: string) => void) | null) => {
+  const liveDocDiscussionHandlerRef = useRef<((docId: string, section: LiveDocSection, selectedText: string) => void) | null>(null);
+  const [liveDocTargetState, setLiveDocTargetState] = useState<{
+    docId: string;
+    sectionId: string;
+    selectedText: string;
+    active: boolean;
+  } | null>(null);
+  const handleLiveDocDiscussionHandlerChange = useCallback((handler: ((docId: string, section: LiveDocSection, selectedText: string) => void) | null) => {
     liveDocDiscussionHandlerRef.current = handler;
   }, []);
   const topBarRef = useRef<HTMLDivElement>(null);
@@ -2362,6 +2368,7 @@ export function AppShell() {
               onCreateLiveDoc={liveDocsFeatureEnabled ? handleCreateLiveDoc : undefined}
               onOpenLiveDoc={liveDocsFeatureEnabled ? handleOpenLiveDoc : undefined}
               onLiveDocDiscussionHandlerChange={liveDocsFeatureEnabled ? handleLiveDocDiscussionHandlerChange : undefined}
+              onLiveDocTargetStateChange={liveDocsFeatureEnabled ? setLiveDocTargetState : undefined}
               soundEnabled={soundEnabled}
               onSoundToggle={onSoundToggle}
               playDoneSound={playDoneSound}
@@ -2521,6 +2528,8 @@ export function AppShell() {
               docId={activeFileTab.liveDocId}
               headRevisionId={liveDocs.find((doc) => doc.id === activeFileTab.liveDocId)?.headRevisionId}
               refreshKey={liveDocs.find((doc) => doc.id === activeFileTab.liveDocId)?.updatedAt}
+              focusedSectionId={liveDocTargetState?.docId === activeFileTab.liveDocId ? liveDocTargetState.sectionId : undefined}
+              focusedSectionActive={liveDocTargetState?.docId === activeFileTab.liveDocId ? liveDocTargetState.active : false}
               onChanged={handleLiveDocChanged}
               onStartDiscussion={(section, selectedText) => {
                 liveDocDiscussionHandlerRef.current?.(activeFileTab.liveDocId!, section, selectedText);

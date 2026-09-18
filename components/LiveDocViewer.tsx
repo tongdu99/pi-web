@@ -8,6 +8,8 @@ interface Props {
   docId: string;
   headRevisionId?: string;
   refreshKey?: string;
+  focusedSectionId?: string;
+  focusedSectionActive?: boolean;
   onChanged?: (doc: LiveDocRecord) => void;
   onStartDiscussion?: (section: LiveDocSection, selectedText: string) => void;
 }
@@ -20,7 +22,7 @@ async function responseJson<T>(response: Response): Promise<T> {
   return body;
 }
 
-export function LiveDocViewer({ docId, headRevisionId, refreshKey, onChanged, onStartDiscussion }: Props) {
+export function LiveDocViewer({ docId, headRevisionId, refreshKey, focusedSectionId, focusedSectionActive, onChanged, onStartDiscussion }: Props) {
   const [doc, setDoc] = useState<LiveDocRecord | null>(null);
   const [title, setTitle] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -45,6 +47,15 @@ export function LiveDocViewer({ docId, headRevisionId, refreshKey, onChanged, on
     setSelectionAction(null);
     void load().catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
   }, [docId, headRevisionId, load, refreshKey]);
+
+  useEffect(() => {
+    if (!focusedSectionId) return;
+    requestAnimationFrame(() => {
+      contentRef.current
+        ?.querySelector<HTMLElement>(`[data-live-doc-section="${focusedSectionId}"]`)
+        ?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    });
+  }, [doc?.headRevisionId, focusedSectionId]);
 
   const saveTitle = useCallback(async () => {
     if (!doc || !title.trim() || title.trim() === doc.title) {
@@ -131,6 +142,7 @@ export function LiveDocViewer({ docId, headRevisionId, refreshKey, onChanged, on
             <div style={{ color: "var(--text-dim)", fontSize: 13, fontStyle: "italic" }}>This Live Doc is empty. Add an assistant response to begin.</div>
           ) : head.sections.map((section) => {
             const sectionHovered = hoveredSectionId === section.id;
+            const sectionFocused = focusedSectionId === section.id;
             return (
               <div
                 key={section.id}
@@ -140,9 +152,17 @@ export function LiveDocViewer({ docId, headRevisionId, refreshKey, onChanged, on
                 onMouseUp={(event) => captureSelection(section, event)}
                 style={{
                   position: "relative", margin: 0, padding: 0,
-                  outline: sectionHovered ? "1px solid color-mix(in srgb, #a855f7 38%, var(--border))" : "1px solid transparent",
+                  outline: sectionFocused
+                    ? `${focusedSectionActive ? 2 : 1}px solid color-mix(in srgb, #a855f7 72%, var(--border))`
+                    : sectionHovered
+                      ? "1px solid color-mix(in srgb, #a855f7 38%, var(--border))"
+                      : "1px solid transparent",
                   outlineOffset: 4, borderRadius: 5, transition: "outline-color 0.12s, background 0.12s",
-                  background: sectionHovered ? "color-mix(in srgb, #a855f7 3%, transparent)" : "transparent",
+                  background: sectionFocused
+                    ? "color-mix(in srgb, #a855f7 7%, transparent)"
+                    : sectionHovered
+                      ? "color-mix(in srgb, #a855f7 3%, transparent)"
+                      : "transparent",
                 }}
               >
                 <MarkdownBody>{section.markdown}</MarkdownBody>

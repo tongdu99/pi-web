@@ -734,6 +734,7 @@ export class AgentSessionWrapper {
         }
         const docId = typeof command.docId === "string" ? command.docId : "";
         const sectionId = typeof command.sectionId === "string" ? command.sectionId : "";
+        const sectionLabel = typeof command.sectionLabel === "string" ? command.sectionLabel.trim().slice(0, 120) : "";
         const selectedText = typeof command.selectedText === "string" ? command.selectedText.trim().slice(0, 50_000) : "";
         if (!docId || !sectionId) throw new Error("A Live Doc and section are required");
         const doc = await getLiveDoc(docId);
@@ -745,6 +746,7 @@ export class AgentSessionWrapper {
           version: 1,
           docId,
           sectionId,
+          sectionLabel: sectionLabel || "Selected section",
           selectedText,
           hostLeafId,
           status: "open",
