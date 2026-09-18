@@ -906,6 +906,12 @@ export function AppShell() {
     }
   }, [createLiveDoc, handleOpenLiveDoc]);
 
+  const handleDefaultLiveDocChange = useCallback((docId: string) => {
+    const doc = liveDocs.find((candidate) => candidate.id === docId);
+    if (doc) handleOpenLiveDoc(doc);
+    else setDefaultDocId(docId);
+  }, [handleOpenLiveDoc, liveDocs, setDefaultDocId]);
+
   const handleLiveDocChanged = useCallback((doc: LiveDocRecord) => {
     updateLiveDocSummary(doc);
     setFileTabs((tabs) => tabs.map((tab) => tab.liveDocId === doc.id ? { ...tab, label: doc.title } : tab));
@@ -2352,7 +2358,7 @@ export function AppShell() {
               onOpenUrl={handleOpenWebUrl}
               liveDocs={liveDocsFeatureEnabled ? liveDocs : []}
               defaultLiveDocId={liveDocsFeatureEnabled ? defaultDocId : null}
-              onDefaultLiveDocChange={liveDocsFeatureEnabled ? setDefaultDocId : undefined}
+              onDefaultLiveDocChange={liveDocsFeatureEnabled ? handleDefaultLiveDocChange : undefined}
               onCreateLiveDoc={liveDocsFeatureEnabled ? handleCreateLiveDoc : undefined}
               onOpenLiveDoc={liveDocsFeatureEnabled ? handleOpenLiveDoc : undefined}
               onLiveDocDiscussionHandlerChange={liveDocsFeatureEnabled ? handleLiveDocDiscussionHandlerChange : undefined}

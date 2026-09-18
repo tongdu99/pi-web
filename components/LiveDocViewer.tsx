@@ -28,6 +28,7 @@ export function LiveDocViewer({ docId, headRevisionId, refreshKey, onChanged, on
   const [historyOpen, setHistoryOpen] = useState(false);
   const [revisions, setRevisions] = useState<RevisionSummary[]>([]);
   const [restoring, setRestoring] = useState<string | null>(null);
+  const [hoveredSectionId, setHoveredSectionId] = useState<string | null>(null);
   const [selectionAction, setSelectionAction] = useState<{ section: LiveDocSection; text: string; left: number; top: number } | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
@@ -128,16 +129,41 @@ export function LiveDocViewer({ docId, headRevisionId, refreshKey, onChanged, on
         <div ref={contentRef} style={{ flex: 1, position: "relative", overflowY: "auto", padding: "18px 22px" }}>
           {!head || head.sections.length === 0 ? (
             <div style={{ color: "var(--text-dim)", fontSize: 13, fontStyle: "italic" }}>This Live Doc is empty. Add an assistant response to begin.</div>
-          ) : head.sections.map((section) => (
-            <div key={section.id} data-live-doc-section={section.id} onMouseUp={(event) => captureSelection(section, event)}
-              style={{ position: "relative", borderLeft: "2px solid transparent", paddingLeft: 10, marginLeft: -12 }}>
-              <MarkdownBody>{section.markdown}</MarkdownBody>
-              {onStartDiscussion && (
-                <button type="button" onClick={() => onStartDiscussion(section, section.markdown)} title="Start Live Update Discussion"
-                  style={{ ...smallButtonStyle, position: "absolute", top: 0, right: 0, opacity: 0.7, color: "#a855f7", borderColor: "color-mix(in srgb, #a855f7 45%, var(--border))" }}>↳ Live update</button>
-              )}
-            </div>
-          ))}
+          ) : head.sections.map((section) => {
+            const sectionHovered = hoveredSectionId === section.id;
+            return (
+              <div
+                key={section.id}
+                data-live-doc-section={section.id}
+                onMouseEnter={() => setHoveredSectionId(section.id)}
+                onMouseLeave={() => setHoveredSectionId((current) => current === section.id ? null : current)}
+                onMouseUp={(event) => captureSelection(section, event)}
+                style={{
+                  position: "relative", margin: "0 -10px 8px", padding: "8px 10px 28px",
+                  border: `1px solid ${sectionHovered ? "color-mix(in srgb, #a855f7 38%, var(--border))" : "transparent"}`,
+                  borderRadius: 7, transition: "border-color 0.12s, background 0.12s",
+                  background: sectionHovered ? "color-mix(in srgb, #a855f7 3%, transparent)" : "transparent",
+                }}
+              >
+                <MarkdownBody>{section.markdown}</MarkdownBody>
+                {onStartDiscussion && (
+                  <button
+                    type="button"
+                    onClick={() => onStartDiscussion(section, section.markdown)}
+                    title="Start Live Update Discussion"
+                    style={{
+                      ...smallButtonStyle, position: "absolute", bottom: 5, right: 7,
+                      opacity: sectionHovered ? 1 : 0, pointerEvents: sectionHovered ? "auto" : "none",
+                      color: "#a855f7", borderColor: "color-mix(in srgb, #a855f7 45%, var(--border))",
+                      transition: "opacity 0.12s, color 0.12s",
+                    }}
+                  >
+                    ↳ Live update
+                  </button>
+                )}
+              </div>
+            );
+          })}
           {selectionAction && (
             <button type="button" onMouseDown={(event) => event.preventDefault()}
               onClick={() => { onStartDiscussion?.(selectionAction.section, selectionAction.text); setSelectionAction(null); window.getSelection()?.removeAllRanges(); }}

@@ -103,7 +103,7 @@ test("offers quoting for a complete assistant response", () => {
   assert.match(html, /A detailed answer/);
 });
 
-test("offers a completed assistant response to the selected Live Doc", () => {
+test("offers a hover-style split action after Copy without showing the default doc name", () => {
   const html = renderMessage({
     role: "assistant",
     provider: "openai",
@@ -118,13 +118,24 @@ test("offers a completed assistant response to the selected Live Doc", () => {
       updatedAt: "2026-01-01T00:00:00.000Z",
       sessionIds: ["session-a"],
       headRevisionId: "revision-1",
+    }, {
+      id: "doc-87654321",
+      title: "Design.md",
+      format: "text/markdown",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      sessionIds: ["session-a"],
+      headRevisionId: "revision-2",
     }],
     defaultLiveDocId: "doc-12345678",
     onAddToLiveDoc() {},
   });
 
   assert.match(html, /Add to Live Doc/);
-  assert.match(html, /PR Review\.md/);
+  assert.match(html, /aria-label="Choose Live Doc"/);
+  assert.doesNotMatch(html, />PR Review\.md</);
+  assert.ok(html.indexOf("Copy") < html.indexOf("Add to Live Doc"));
+  assert.match(html, /opacity:0;pointer-events:none/);
 });
 
 test("places the model at the start of the response telemetry footer", () => {

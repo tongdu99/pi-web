@@ -663,6 +663,8 @@ function AssistantMessageView({
   const providerError = getAssistantErrorMessage(message, { isStreaming });
   const [hovered, setHovered] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [liveDocMenuOpen, setLiveDocMenuOpen] = useState(false);
+  const liveDocMenuRef = useRef<HTMLDivElement>(null);
   const streamStartRef = useRef<number | null>(null);
   const [tps, setTps] = useState<number | null>(null);
   const blockItemsRef = useRef(blockItems);
@@ -720,6 +722,22 @@ function AssistantMessageView({
   // Keep the original Markdown for a full-response quote so formatting and
   // fenced text/XML/code blocks render identically in the quote card.
   const quoteContent = textBlocks.map((b) => b.text).join("\n\n");
+
+  useEffect(() => {
+    if (!liveDocMenuOpen) return;
+    const dismiss = (event: PointerEvent) => {
+      if (!liveDocMenuRef.current?.contains(event.target as Node)) setLiveDocMenuOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setLiveDocMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", dismiss, true);
+    document.addEventListener("keydown", escape, true);
+    return () => {
+      document.removeEventListener("pointerdown", dismiss, true);
+      document.removeEventListener("keydown", escape, true);
+    };
+  }, [liveDocMenuOpen]);
 
   const copyContent = () => {
     copyText(textContent).then(() => {
@@ -899,30 +917,6 @@ function AssistantMessageView({
             <span aria-hidden="true">↩</span> {t("i18n.quoteResponse")}
           </button>
         )}
-        {textContent && !isStreaming && onAddToLiveDoc && (
-          <div style={{ display: "flex", alignItems: "center", gap: 3, marginLeft: "auto" }}>
-            {liveDocs && liveDocs.length > 0 && (
-              <select
-                aria-label="Target Live Doc"
-                value={defaultLiveDocId ?? liveDocs[0]?.id ?? ""}
-                disabled={liveDocUpdateDisabled}
-                onChange={(event) => onLiveDocTargetChange?.(event.target.value)}
-                style={{ maxWidth: 130, height: 22, border: "1px solid var(--border)", borderRadius: 4, background: "var(--bg-panel)", color: "var(--text-muted)", fontSize: 10 }}
-              >
-                {liveDocs.map((doc) => <option key={doc.id} value={doc.id}>{doc.title}</option>)}
-              </select>
-            )}
-            <button
-              type="button"
-              disabled={liveDocUpdateDisabled}
-              onClick={() => onAddToLiveDoc(quoteContent, defaultLiveDocId ?? liveDocs?.[0]?.id ?? null)}
-              title="Merge this response into the selected Live Doc"
-              style={{ display: "flex", alignItems: "center", gap: 4, padding: "3px 8px", height: 22, background: "none", border: "1px solid color-mix(in srgb, var(--accent) 45%, var(--border))", borderRadius: 5, color: "var(--accent)", cursor: liveDocUpdateDisabled ? "not-allowed" : "pointer", opacity: liveDocUpdateDisabled ? 0.45 : 1, fontSize: 11, whiteSpace: "nowrap" }}
-            >
-              <span aria-hidden="true">＋</span> Add to Live Doc
-            </button>
-          </div>
-        )}
         {textContent && !isStreaming && (
           <button
             onClick={copyContent}
@@ -955,6 +949,79 @@ function AssistantMessageView({
             )}
              {copied ? t("i18n.copied") : t("i18n.copy")}
           </button>
+        )}
+        {textContent && !isStreaming && onAddToLiveDoc && (
+          <div
+            ref={liveDocMenuRef}
+            style={{
+              position: "relative", display: "flex", alignItems: "center",
+              opacity: hovered || liveDocMenuOpen ? 1 : 0,
+              pointerEvents: hovered || liveDocMenuOpen ? "auto" : "none",
+              transition: "opacity 0.12s",
+            }}
+          >
+            <button
+              type="button"
+              disabled={liveDocUpdateDisabled}
+              onClick={() => onAddToLiveDoc(quoteContent, defaultLiveDocId ?? liveDocs?.[0]?.id ?? null)}
+              title="Merge this response into the current Live Doc"
+              style={{
+                display: "flex", alignItems: "center", gap: 4, height: 22, padding: "3px 8px",
+                border: "none", borderRadius: liveDocs && liveDocs.length > 1 ? "5px 0 0 5px" : 5,
+                background: "none", color: "var(--text-dim)", cursor: liveDocUpdateDisabled ? "not-allowed" : "pointer",
+                opacity: liveDocUpdateDisabled ? 0.45 : 1, fontSize: 11, whiteSpace: "nowrap",
+              }}
+              onMouseEnter={(event) => { if (!liveDocUpdateDisabled) event.currentTarget.style.color = "var(--accent)"; }}
+              onMouseLeave={(event) => { event.currentTarget.style.color = "var(--text-dim)"; }}
+            >
+              <span aria-hidden="true">＋</span> Add to Live Doc
+            </button>
+            {liveDocs && liveDocs.length > 1 && (
+              <>
+                <button
+                  type="button"
+                  disabled={liveDocUpdateDisabled}
+                  aria-haspopup="menu"
+                  aria-expanded={liveDocMenuOpen}
+                  aria-label="Choose Live Doc"
+                  title="Choose another Live Doc"
+                  onClick={() => setLiveDocMenuOpen((open) => !open)}
+                  style={{
+                    width: 20, height: 22, padding: 0, border: "none", borderLeft: "1px solid var(--border)",
+                    borderRadius: "0 5px 5px 0", background: liveDocMenuOpen ? "var(--bg-hover)" : "none",
+                    color: "var(--text-dim)", cursor: liveDocUpdateDisabled ? "not-allowed" : "pointer", fontSize: 9,
+                  }}
+                >
+                  ▾
+                </button>
+                {liveDocMenuOpen && (
+                  <div role="menu" aria-label="Choose Live Doc" style={{
+                    position: "absolute", right: 0, bottom: "calc(100% + 4px)", zIndex: 20,
+                    minWidth: 180, maxWidth: 260, padding: 4, border: "1px solid var(--border)", borderRadius: 7,
+                    background: "var(--bg-panel)", boxShadow: "0 6px 18px rgba(0,0,0,0.18)",
+                  }}>
+                    {liveDocs.map((doc) => (
+                      <button
+                        key={doc.id}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={doc.id === defaultLiveDocId}
+                        onClick={() => { onLiveDocTargetChange?.(doc.id); setLiveDocMenuOpen(false); }}
+                        style={{
+                          display: "flex", alignItems: "center", gap: 7, width: "100%", padding: "6px 8px",
+                          border: "none", borderRadius: 4, background: doc.id === defaultLiveDocId ? "var(--bg-selected)" : "none",
+                          color: "var(--text-muted)", cursor: "pointer", fontSize: 11, textAlign: "left",
+                        }}
+                      >
+                        <span aria-hidden="true" style={{ width: 10, color: "var(--accent)" }}>{doc.id === defaultLiveDocId ? "●" : ""}</span>
+                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{doc.title}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
         )}
         {time && !isStreaming && (
           <span style={{ fontSize: 10, color: "var(--text-dim)", marginLeft: "auto" }}>{time}</span>
