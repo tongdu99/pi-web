@@ -188,32 +188,44 @@ export async function listLiveDocs(sessionId: string, root?: string): Promise<Li
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
-export async function createLiveDoc(sessionId: string, title = "Untitled.md", root?: string): Promise<LiveDocRecord> {
+export async function createLiveDoc(sessionId: string, title?: string, root?: string): Promise<LiveDocRecord> {
   if (!sessionId) throw new Error("Session id is required");
-  const id = randomUUID();
-  const now = new Date().toISOString();
-  const revision: LiveDocRevision = {
-    id: randomUUID(),
-    previousRevisionId: null,
-    createdAt: now,
-    sections: [],
-    source: { sessionId },
-    summary: "Created live doc",
-  };
-  const doc: LiveDocRecord = {
-    schemaVersion: LIVE_DOC_SCHEMA_VERSION,
-    id,
-    title: normalizedTitle(title),
-    format: LIVE_DOC_FORMAT,
-    createdAt: now,
-    updatedAt: now,
-    sessionIds: [sessionId],
-    headRevisionId: revision.id,
-    revisions: [revision],
-  };
-  await writeRecord(doc, root);
-  publishLiveDocEvent({ type: "created", docId: id, revisionId: revision.id, sessionIds: doc.sessionIds });
-  return doc;
+  return withLock(`session-${sessionId}`, async () => {
+    let resolvedTitle = title;
+    if (!resolvedTitle) {
+      const existing = new Set((await listLiveDocs(sessionId, root)).map((doc) => doc.title.toLocaleLowerCase()));
+      let index = 1;
+      resolvedTitle = "Untitled.md";
+      while (existing.has(resolvedTitle.toLocaleLowerCase())) {
+        index += 1;
+        resolvedTitle = `Untitled ${index}.md`;
+      }
+    }
+    const id = randomUUID();
+    const now = new Date().toISOString();
+    const revision: LiveDocRevision = {
+      id: randomUUID(),
+      previousRevisionId: null,
+      createdAt: now,
+      sections: [],
+      source: { sessionId },
+      summary: "Created live doc",
+    };
+    const doc: LiveDocRecord = {
+      schemaVersion: LIVE_DOC_SCHEMA_VERSION,
+      id,
+      title: normalizedTitle(resolvedTitle),
+      format: LIVE_DOC_FORMAT,
+      createdAt: now,
+      updatedAt: now,
+      sessionIds: [sessionId],
+      headRevisionId: revision.id,
+      revisions: [revision],
+    };
+    await writeRecord(doc, root);
+    publishLiveDocEvent({ type: "created", docId: id, revisionId: revision.id, sessionIds: doc.sessionIds });
+    return doc;
+  });
 }
 
 export async function renameLiveDoc(id: string, title: string, root?: string): Promise<LiveDocRecord> {

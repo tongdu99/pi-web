@@ -14,6 +14,8 @@ import { SkillsConfig } from "./SkillsConfig";
 import { PluginsConfig } from "./PluginsConfig";
 import { ProjectTrustDialog } from "./ProjectTrustDialog";
 import { BranchNavigator } from "./BranchNavigator";
+import { LiveDocsMenu } from "./LiveDocsMenu";
+import { LiveDocViewer } from "./LiveDocViewer";
 import { useTheme } from "@/hooks/useTheme";
 import { useI18n } from "@/hooks/useI18n";
 import { useIsMobile } from "@/hooks/useIsMobile";
@@ -54,6 +56,8 @@ import type { ProjectTrustStatus } from "@/lib/api-types";
 import type { ChatInputHandle } from "./ChatInput";
 import type { SessionStatsInfo } from "@/lib/pi-types";
 import type { FileViewerState } from "@/lib/file-viewer-state";
+import type { LiveDocRecord, LiveDocSummary } from "@/lib/live-docs";
+import { useLiveDocs } from "@/hooks/useLiveDocs";
 
 type SessionCopyField = "file" | "id";
 type AutoNameStatus =
@@ -406,9 +410,18 @@ export function AppShell() {
     return () => ro.disconnect();
   }, [activeTopPanel, isMobile]);
 
-  // Right panel — file and web tabs
+  // Right panel — file, web, and Live Doc tabs
   const [fileTabs, setFileTabs] = useState<Tab[]>([]);
   const [activeFileTabId, setActiveFileTabId] = useState<string | null>(null);
+  const {
+    docs: liveDocs,
+    defaultDocId,
+    setDefaultDocId,
+    createDoc: createLiveDoc,
+    updateSummary: updateLiveDocSummary,
+    loading: liveDocsLoading,
+    error: liveDocsError,
+  } = useLiveDocs(selectedSession?.id ?? null);
 
   const handleFileViewerStateChange = useCallback((
     tabId: string,
@@ -862,6 +875,39 @@ export function AppShell() {
     // On mobile the file panel is full-screen; close the drawer so it shows.
     if (isMobile) setSidebarOpen(false);
   }, [isMobile]);
+
+  const handleOpenLiveDoc = useCallback((doc: LiveDocSummary | LiveDocRecord) => {
+    const tabId = `live-doc:${doc.id}`;
+    setFileTabs((tabs) => {
+      const existing = tabs.find((tab) => tab.id === tabId);
+      if (existing) return tabs.map((tab) => tab.id === tabId ? { ...tab, label: doc.title } : tab);
+      return [...tabs, { id: tabId, label: doc.title, filePath: "", kind: "live-doc", liveDocId: doc.id }];
+    });
+    setActiveFileTabId(tabId);
+    setDefaultDocId(doc.id);
+    setRightPanelOpen(true);
+    if (isMobile) setSidebarOpen(false);
+  }, [isMobile, setDefaultDocId]);
+
+  const handleCreateLiveDoc = useCallback(async () => {
+    try {
+      const doc = await createLiveDoc();
+      handleOpenLiveDoc(doc);
+    } catch (error) {
+      console.error("Failed to create Live Doc:", error);
+    }
+  }, [createLiveDoc, handleOpenLiveDoc]);
+
+  const handleLiveDocChanged = useCallback((doc: LiveDocRecord) => {
+    updateLiveDocSummary(doc);
+    setFileTabs((tabs) => tabs.map((tab) => tab.liveDocId === doc.id ? { ...tab, label: doc.title } : tab));
+  }, [updateLiveDocSummary]);
+
+  const handleSelectRightTab = useCallback((tabId: string) => {
+    setActiveFileTabId(tabId);
+    const tab = fileTabs.find((candidate) => candidate.id === tabId);
+    if (tab?.kind === "live-doc" && tab.liveDocId) setDefaultDocId(tab.liveDocId);
+  }, [fileTabs, setDefaultDocId]);
 
   const handleOpenLinkedFile = useCallback((filePath: string, lineRange?: FileLineRange) => {
     handleOpenFile(filePath, getFileName(filePath), {
@@ -1973,6 +2019,15 @@ export function AppShell() {
                 )}
               </button>
               {renderSessionStatsButton(true)}
+              <LiveDocsMenu
+                docs={liveDocs}
+                defaultDocId={defaultDocId}
+                disabled={!selectedSession || selectedSession.transient}
+                loading={liveDocsLoading}
+                error={liveDocsError}
+                onCreate={() => { void handleCreateLiveDoc(); }}
+                onOpen={handleOpenLiveDoc}
+              />
               {renderSessionMenuButton()}
               {renderMainFileToggle(true)}
               {false && (
@@ -2003,6 +2058,15 @@ export function AppShell() {
           {!isMobile && renderProjectTrustWarning(false)}
           {!isMobile && (
             <div style={{ marginLeft: "auto", display: "flex", alignItems: "stretch", height: "100%" }}>
+              <LiveDocsMenu
+                docs={liveDocs}
+                defaultDocId={defaultDocId}
+                disabled={!selectedSession || selectedSession.transient}
+                loading={liveDocsLoading}
+                error={liveDocsError}
+                onCreate={() => { void handleCreateLiveDoc(); }}
+                onOpen={handleOpenLiveDoc}
+              />
               {renderSessionMenuButton()}
               {renderMainFileToggle(false)}
             </div>
@@ -2369,7 +2433,7 @@ export function AppShell() {
             <TabBar
               tabs={fileTabs}
               activeTabId={activeFileTabId ?? ""}
-              onSelectTab={setActiveFileTabId}
+              onSelectTab={handleSelectRightTab}
               onCloseTab={handleCloseFileTab}
             />
           </div>
@@ -2432,6 +2496,13 @@ export function AppShell() {
               {systemPrompt ?? (systemPromptLoading ? translate("system.loading") : translate("system.load"))}
               {systemPrompt === "" && translate("system.empty")}
             </div>
+          ) : activeFileTab?.kind === "live-doc" && activeFileTab.liveDocId ? (
+            <LiveDocViewer
+              docId={activeFileTab.liveDocId}
+              headRevisionId={liveDocs.find((doc) => doc.id === activeFileTab.liveDocId)?.headRevisionId}
+              refreshKey={liveDocs.find((doc) => doc.id === activeFileTab.liveDocId)?.updatedAt}
+              onChanged={handleLiveDocChanged}
+            />
           ) : activeFileTab?.filePath ? (
             <FileViewer
               key={`${activeFileTab.id}:${activeFileTab.viewerRevision ?? 0}`}

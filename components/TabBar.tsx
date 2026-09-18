@@ -11,8 +11,9 @@ export interface Tab {
   label: string;
   filePath: string;
   /** Missing means a file tab, retained for existing saved tab state. */
-  kind?: "file" | "web" | "system";
+  kind?: "file" | "web" | "system" | "live-doc";
   url?: string;
+  liveDocId?: string;
   content?: string | null;
   sourceSessionId?: string | null;
   initialDisplayMode?: FileViewerDisplayMode;
@@ -32,6 +33,14 @@ function WebIcon() {
   return (
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
       <circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
+    </svg>
+  );
+}
+
+function LiveDocIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" /><path d="M14 2v6h6" /><path d="M8 13h8M8 17h6" />
     </svg>
   );
 }
@@ -87,7 +96,7 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: Props) {
             }}
           >
             <span style={{ flexShrink: 0, opacity: isActive ? 1 : 0.7, display: "flex", alignItems: "center" }}>
-              {tab.kind === "web" ? <WebIcon /> : getFileIcon(tab.label, 13)}
+              {tab.kind === "web" ? <WebIcon /> : tab.kind === "live-doc" ? <LiveDocIcon /> : getFileIcon(tab.label, 13)}
             </span>
             <span
               style={{
@@ -96,7 +105,7 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: Props) {
                 flex: 1,
                 fontWeight: isActive ? 500 : 400,
               }}
-              title={tab.kind === "web" ? tab.url : tab.filePath}
+              title={tab.kind === "web" ? tab.url : tab.kind === "live-doc" ? tab.label : tab.filePath}
             >
               {tab.label}
             </span>
