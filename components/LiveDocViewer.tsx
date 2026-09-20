@@ -3,9 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { LiveDocRecord, LiveDocRevision, LiveDocSection } from "@/lib/live-docs";
 import type { LiveDocThreadDescriptor } from "@/lib/live-doc-discussions";
+import type { LiveDocComposerState } from "@/lib/live-doc-composer";
 import type { FileLineRange } from "@/lib/file-links";
-import { buildLiveDocRevisionPreview } from "@/lib/live-doc-preview";
+import { buildLiveDocRevisionPreview, findAdjacentNewerRevision } from "@/lib/live-doc-preview";
 import { MarkdownBody } from "./MarkdownBody";
+import { LiveDocComposer } from "./LiveDocComposer";
 
 interface Props {
   docId: string;
@@ -21,6 +23,7 @@ interface Props {
   onChanged?: (doc: LiveDocRecord) => void;
   onStartDiscussion?: (section: LiveDocSection, selectedText: string) => void;
   onOpenDiscussion?: (discussionEntryId: string) => void;
+  composer?: LiveDocComposerState | null;
 }
 
 type RevisionSummary = Pick<LiveDocRevision, "id" | "previousRevisionId" | "createdAt" | "summary" | "source" | "change">;
@@ -37,7 +40,7 @@ async function responseJson<T>(response: Response): Promise<T> {
   return body;
 }
 
-export function LiveDocViewer({ docId, sessionId, headRevisionId, refreshKey, focusedSectionId, focusedSectionActive, conversations = [], cwd, onOpenFile, onOpenUrl, onChanged, onStartDiscussion, onOpenDiscussion }: Props) {
+export function LiveDocViewer({ docId, sessionId, headRevisionId, refreshKey, focusedSectionId, focusedSectionActive, conversations = [], cwd, onOpenFile, onOpenUrl, onChanged, onStartDiscussion, onOpenDiscussion, composer }: Props) {
   const [doc, setDoc] = useState<LiveDocRecord | null>(null);
   const [title, setTitle] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -133,7 +136,7 @@ export function LiveDocViewer({ docId, sessionId, headRevisionId, refreshKey, fo
   };
 
   const switchDiscussionTarget = (section: LiveDocSection, event: React.MouseEvent<HTMLDivElement>) => {
-    if (previewRevisionId || !focusedSectionId || section.id === focusedSectionId || !onStartDiscussion) return;
+    if (previewRevisionId || section.id === focusedSectionId || !onStartDiscussion) return;
     const target = event.target instanceof Element ? event.target : null;
     if (target?.closest("a, button, input, textarea, select, summary")) return;
     const selection = window.getSelection();
@@ -164,8 +167,16 @@ export function LiveDocViewer({ docId, sessionId, headRevisionId, refreshKey, fo
   if (!doc) return <div role="alert" style={{ padding: 16, color: "#dc2626", fontSize: 12 }}>{error}</div>;
   const head = doc.revisions.find((revision) => revision.id === doc.headRevisionId);
   const previewRevision = previewRevisionId ? doc.revisions.find((revision) => revision.id === previewRevisionId) : undefined;
-  const preview = head
-    ? buildLiveDocRevisionPreview(head, previewRevision)
+  const previewRevisionIds = previewRevisionId && mainRevisionIds.includes(previewRevisionId)
+    ? mainRevisionIds
+    : archivedRevisionIds;
+  // History lists are newest-first. Compare each snapshot only with the one
+  // immediately newer; the newest item in either group compares with the head.
+  const previewComparisonRevision = previewRevision
+    ? findAdjacentNewerRevision(doc.revisions, previewRevisionIds, previewRevision.id) ?? head
+    : head;
+  const preview = previewComparisonRevision
+    ? buildLiveDocRevisionPreview(previewComparisonRevision, previewRevision)
     : { sections: [], changedSectionIds: new Set<string>() };
   const displayedSections = preview.sections;
   const previewChangedIds = preview.changedSectionIds;
@@ -228,10 +239,10 @@ export function LiveDocViewer({ docId, sessionId, headRevisionId, refreshKey, fo
                 onMouseLeave={() => setHoveredSectionId((current) => current === section.id ? null : current)}
                 onMouseUp={(event) => captureSelection(section, event)}
                 onClick={(event) => switchDiscussionTarget(section, event)}
-                title={!previewRevision && focusedSectionId && section.id !== focusedSectionId ? "Click to switch the document context" : undefined}
+                title={!previewRevision && section.id !== focusedSectionId ? "Click to set the document context" : undefined}
                 style={{
                   position: "relative", margin: 0, padding: 0,
-                  cursor: !previewRevision && focusedSectionId && section.id !== focusedSectionId ? "pointer" : undefined,
+                  cursor: !previewRevision && section.id !== focusedSectionId ? "pointer" : undefined,
                   outline: sectionChangedInPreview
                     ? "2px solid color-mix(in srgb, var(--accent) 70%, var(--border))"
                     : sectionFocused
@@ -300,6 +311,7 @@ export function LiveDocViewer({ docId, sessionId, headRevisionId, refreshKey, fo
           </aside>
         )}
       </div>
+      {composer && <LiveDocComposer docId={docId} composer={composer} />}
     </div>
   );
 }

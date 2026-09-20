@@ -303,6 +303,11 @@ export class AgentSessionWrapper {
     return true;
   }
 
+  /** Capability probe for whole-document discussion targets. */
+  supportsWholeLiveDocConversations(): boolean {
+    return true;
+  }
+
   /**
    * True when this session owns its working directory, i.e. it was started by
    * an attach and its `session_start` handlers reconciled the checkout.
@@ -782,9 +787,7 @@ export class AgentSessionWrapper {
         const sectionLabel = typeof command.sectionLabel === "string" ? command.sectionLabel.trim().slice(0, 120) : "";
         const selectedText = typeof command.selectedText === "string" ? command.selectedText.trim().slice(0, 50_000) : "";
         const kind = command.kind === "merge-response" ? "merge-response" : "discussion";
-        if (!docId || (kind === "discussion" && !sectionId)) {
-          throw new Error(kind === "discussion" ? "A Live Doc and section are required" : "A Live Doc is required");
-        }
+        if (!docId) throw new Error("A Live Doc is required");
         const doc = await getLiveDoc(docId);
         if (!doc || !doc.sessionIds.includes(this.inner.sessionId)) throw new Error("Live Doc is not linked to this session");
         const head = doc.revisions.find((revision) => revision.id === doc.headRevisionId);
