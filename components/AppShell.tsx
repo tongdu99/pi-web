@@ -60,6 +60,7 @@ import type { LiveDocRecord, LiveDocSection, LiveDocSummary } from "@/lib/live-d
 import { useLiveDocs } from "@/hooks/useLiveDocs";
 import { liveDocsEnabled } from "@/lib/live-doc-feature";
 import { collectLiveDocThreads } from "@/lib/live-doc-discussions";
+import type { LiveDocComposerState } from "@/lib/live-doc-composer";
 
 type SessionCopyField = "file" | "id";
 type AutoNameStatus =
@@ -198,9 +199,11 @@ export function AppShell() {
   const [liveDocTargetState, setLiveDocTargetState] = useState<{
     docId: string;
     sectionId: string;
+    sectionLabel: string;
     selectedText: string;
     active: boolean;
   } | null>(null);
+  const [liveDocComposerState, setLiveDocComposerState] = useState<LiveDocComposerState | null>(null);
   const handleLiveDocDiscussionHandlerChange = useCallback((handler: ((docId: string, section: LiveDocSection, selectedText: string) => void) | null) => {
     liveDocDiscussionHandlerRef.current = handler;
   }, []);
@@ -2376,6 +2379,7 @@ export function AppShell() {
               onLiveDocDiscussionHandlerChange={liveDocsFeatureEnabled ? handleLiveDocDiscussionHandlerChange : undefined}
               onOpenLiveDocConversationHandlerChange={liveDocsFeatureEnabled ? handleOpenLiveDocConversationHandlerChange : undefined}
               onLiveDocTargetStateChange={liveDocsFeatureEnabled ? setLiveDocTargetState : undefined}
+              onLiveDocComposerStateChange={liveDocsFeatureEnabled ? setLiveDocComposerState : undefined}
               soundEnabled={soundEnabled}
               onSoundToggle={onSoundToggle}
               playDoneSound={playDoneSound}
@@ -2549,6 +2553,11 @@ export function AppShell() {
               onOpenDiscussion={(discussionEntryId) => {
                 openLiveDocConversationHandlerRef.current?.(discussionEntryId);
               }}
+              composer={liveDocComposerState && (!liveDocComposerState.target || liveDocComposerState.target.docId === activeFileTab.liveDocId)
+                ? liveDocComposerState
+                : liveDocComposerState
+                  ? { ...liveDocComposerState, target: null }
+                  : null}
             />
           ) : activeFileTab?.filePath ? (
             <FileViewer

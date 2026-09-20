@@ -49,6 +49,8 @@ interface Props {
   onFollowUp?: (message: string, images?: AttachedImage[]) => void;
   onPromptWithStreamingBehavior?: (message: string, behavior: "steer" | "followUp", images?: AttachedImage[]) => void;
   isStreaming: boolean;
+  inactive?: boolean;
+  onActivate?: () => void;
   model?: { provider: string; modelId: string } | null;
   isAutoModelSelection?: boolean;
   modelNames?: Record<string, string>;
@@ -466,7 +468,7 @@ export function ModelScopeWarningBanner({ warnings }: { warnings?: string[] }) {
 }
 
 export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
-  onSend, onAbort, onSteer, onFollowUp, isStreaming, model, isAutoModelSelection, modelNames, modelList, modelError, modelScopeWarnings, onModelChange, modelSwitching,
+  onSend, onAbort, onSteer, onFollowUp, isStreaming, inactive = false, onActivate, model, isAutoModelSelection, modelNames, modelList, modelError, modelScopeWarnings, onModelChange, modelSwitching,
   onCompact, onAbortCompaction, isCompacting, compactError, compactResult, toolPreset, onToolPresetChange,
   thinkingLevel, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap,
   retryInfo, queuedMessages, inputHistory = [], onRecallQueue,
@@ -1487,17 +1489,29 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     if (!isMobile) setControlsMenuOpen(false);
   }, [isMobile]);
 
-
+  const wasInactiveRef = useRef(inactive);
+  useEffect(() => {
+    if (wasInactiveRef.current && !inactive) requestAnimationFrame(() => textareaRef.current?.focus());
+    wasInactiveRef.current = inactive;
+  }, [inactive]);
 
   return (
     <div
+      aria-disabled={inactive}
       style={{
         flexShrink: 0,
+        position: "relative",
         background: "transparent",
         padding: "0 16px 8px",
         paddingRight: isMobile ? 16 : 52, // desktop: 16px base + 36px for ChatMinimap alignment
+        opacity: inactive ? 0.55 : 1,
+        transition: "opacity 0.15s",
       }}
     >
+      {inactive && (
+        <button type="button" aria-label="Activate session composer" title="Click to use the session composer" onClick={onActivate}
+          style={{ position: "absolute", inset: 0, zIndex: 200, width: "100%", border: 0, background: "transparent", cursor: "text" }} />
+      )}
       {/* Hidden file input */}
       <input
         ref={fileInputRef}

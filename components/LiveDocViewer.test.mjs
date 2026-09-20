@@ -24,7 +24,8 @@ test("history separates archived snapshots and previews a revision on hover", as
   assert.match(source, /revisionGroup\("History", mainRevisionIds\)/);
   assert.match(source, /revisionGroup\("Archived", archivedRevisionIds\)/);
   assert.match(source, /onMouseEnter=\{\(\) => setPreviewRevisionId\(revision\.id\)\}/);
-  assert.match(source, /buildLiveDocRevisionPreview\(head, previewRevision\)/);
+  assert.match(source, /findAdjacentNewerRevision\(doc\.revisions, previewRevisionIds, previewRevision\.id\) \?\? head/);
+  assert.match(source, /buildLiveDocRevisionPreview\(previewComparisonRevision, previewRevision\)/);
   assert.match(source, /const previewChangedIds = preview\.changedSectionIds/);
 });
 
@@ -36,14 +37,15 @@ test("Live Doc links use the same right-panel file and web handlers as conversat
   assert.match(appShell, /<LiveDocViewer[\s\S]*?cwd=\{activeCwd \?\? undefined\}[\s\S]*?onOpenFile=\{handleOpenLinkedFile\}[\s\S]*?onOpenUrl=\{handleOpenWebUrl\}/);
 });
 
-test("a plain click switches existing document context without hijacking selections or controls", async () => {
+test("a first plain click sets document context without hijacking selections or controls", async () => {
   const source = await readFile(new URL("./LiveDocViewer.tsx", import.meta.url), "utf8");
 
-  assert.match(source, /if \(previewRevisionId \|\| !focusedSectionId \|\| section\.id === focusedSectionId \|\| !onStartDiscussion\) return/);
+  assert.match(source, /if \(previewRevisionId \|\| section\.id === focusedSectionId \|\| !onStartDiscussion\) return/);
+  assert.doesNotMatch(source, /previewRevisionId \|\| !focusedSectionId/);
   assert.match(source, /target\?\.closest\("a, button, input, textarea, select, summary"\)/);
   assert.match(source, /if \(selection && !selection\.isCollapsed\) return/);
   assert.match(source, /onClick=\{\(event\) => switchDiscussionTarget\(section, event\)\}/);
-  assert.match(source, /Click to switch the document context/);
+  assert.match(source, /Click to set the document context/);
   assert.match(source, /title="Start a document conversation about this section"/);
   assert.match(source, /↳ Discuss & update selection/);
 });

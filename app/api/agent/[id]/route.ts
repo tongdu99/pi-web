@@ -24,7 +24,10 @@ export async function POST(
     const needsMergeConversationUpgrade = body.type === "start_live_doc_thread"
       && body.kind === "merge-response"
       && !existing?.supportsLiveDocMergeConversations?.();
-    if (existing?.isAlive() && (needsLiveDocToolUpgrade || needsMergeConversationUpgrade)) {
+    const needsWholeDocumentConversationUpgrade = body.type === "start_live_doc_thread"
+      && !body.sectionId
+      && !existing?.supportsWholeLiveDocConversations?.();
+    if (existing?.isAlive() && (needsLiveDocToolUpgrade || needsMergeConversationUpgrade || needsWholeDocumentConversationUpgrade)) {
       // globalThis keeps wrappers alive across dev hot reloads and application
       // upgrades. Recreate wrappers whose provider tool surface or command
       // protocol predates the requested Live Doc operation.
