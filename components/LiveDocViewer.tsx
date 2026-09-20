@@ -2,21 +2,25 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { LiveDocRecord, LiveDocRevision, LiveDocSection } from "@/lib/live-docs";
+import type { LiveDocThreadDescriptor } from "@/lib/live-doc-discussions";
 import type { FileLineRange } from "@/lib/file-links";
 import { buildLiveDocRevisionPreview } from "@/lib/live-doc-preview";
 import { MarkdownBody } from "./MarkdownBody";
 
 interface Props {
   docId: string;
+  sessionId?: string;
   headRevisionId?: string;
   refreshKey?: string;
   focusedSectionId?: string;
   focusedSectionActive?: boolean;
+  conversations?: LiveDocThreadDescriptor[];
   cwd?: string;
   onOpenFile?: (filePath: string, lineRange?: FileLineRange) => void;
   onOpenUrl?: (url: string) => void;
   onChanged?: (doc: LiveDocRecord) => void;
   onStartDiscussion?: (section: LiveDocSection, selectedText: string) => void;
+  onOpenDiscussion?: (discussionEntryId: string) => void;
 }
 
 type RevisionSummary = Pick<LiveDocRevision, "id" | "previousRevisionId" | "createdAt" | "summary" | "source" | "change">;
@@ -33,12 +37,13 @@ async function responseJson<T>(response: Response): Promise<T> {
   return body;
 }
 
-export function LiveDocViewer({ docId, headRevisionId, refreshKey, focusedSectionId, focusedSectionActive, cwd, onOpenFile, onOpenUrl, onChanged, onStartDiscussion }: Props) {
+export function LiveDocViewer({ docId, sessionId, headRevisionId, refreshKey, focusedSectionId, focusedSectionActive, conversations = [], cwd, onOpenFile, onOpenUrl, onChanged, onStartDiscussion, onOpenDiscussion }: Props) {
   const [doc, setDoc] = useState<LiveDocRecord | null>(null);
   const [title, setTitle] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [savingTitle, setSavingTitle] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [conversationsOpen, setConversationsOpen] = useState(false);
   const [revisions, setRevisions] = useState<RevisionSummary[]>([]);
   const [mainRevisionIds, setMainRevisionIds] = useState<string[]>([]);
   const [archivedRevisionIds, setArchivedRevisionIds] = useState<string[]>([]);
@@ -100,7 +105,15 @@ export function LiveDocViewer({ docId, headRevisionId, refreshKey, focusedSectio
   const toggleHistory = () => {
     const next = !historyOpen;
     setHistoryOpen(next);
-    if (next) void loadHistory().catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
+    if (next) {
+      setConversationsOpen(false);
+      void loadHistory().catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
+    }
+  };
+
+  const toggleConversations = () => {
+    setConversationsOpen((current) => !current);
+    setHistoryOpen(false);
   };
 
   const restore = async (revisionId: string) => {
@@ -173,7 +186,12 @@ export function LiveDocViewer({ docId, headRevisionId, refreshKey, focusedSectio
             style={{ padding: "7px 0", borderBottom: "1px solid var(--border)", fontSize: 11 }}>
             <div style={{ color: current ? "var(--accent)" : "var(--text-muted)" }}>{current ? "Current" : `${label === "History" ? "Revision" : "Archived"} ${ids.length - index}`}</div>
             <div style={{ color: "var(--text-dim)", margin: "2px 0 5px" }}>{revision.summary ?? new Date(revision.createdAt).toLocaleString()}</div>
-            {!current && <button type="button" disabled={Boolean(restoring)} onClick={() => { void restore(revision.id); }} style={smallButtonStyle}>{restoring === revision.id ? "Restoring…" : "Restore"}</button>}
+            <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+              {!current && <button type="button" disabled={Boolean(restoring)} onClick={() => { void restore(revision.id); }} style={smallButtonStyle}>{restoring === revision.id ? "Restoring…" : "Restore"}</button>}
+              {revision.source?.discussionEntryId && revision.source.sessionId === sessionId && onOpenDiscussion && (
+                <button type="button" onClick={() => onOpenDiscussion(revision.source!.discussionEntryId!)} style={{ ...smallButtonStyle, color: "#a855f7" }}>Open conversation</button>
+              )}
+            </div>
           </div>
         );
       })}
@@ -189,6 +207,7 @@ export function LiveDocViewer({ docId, headRevisionId, refreshKey, focusedSectio
           style={{ flex: 1, minWidth: 0, padding: "4px 6px", border: "1px solid transparent", borderRadius: 4, background: "transparent", color: "var(--text)", fontSize: 13, fontWeight: 600 }} />
         {previewRevision && <span style={{ color: "var(--accent)", fontSize: 10 }}>Preview</span>}
         <span style={{ color: "var(--text-dim)", fontSize: 10 }}>Rev {doc.revisions.length}</span>
+        <button type="button" onClick={toggleConversations} style={{ ...smallButtonStyle, color: conversationsOpen ? "#a855f7" : smallButtonStyle.color }}>Conversations ({conversations.length})</button>
         <button type="button" onClick={toggleHistory} style={smallButtonStyle}>History</button>
       </div>
       {error && <div role="alert" style={{ padding: "6px 12px", background: "color-mix(in srgb, #dc2626 10%, transparent)", color: "#dc2626", fontSize: 11 }}>{error}</div>}
@@ -235,7 +254,7 @@ export function LiveDocViewer({ docId, headRevisionId, refreshKey, focusedSectio
                   <button
                     type="button"
                     onClick={(event) => { event.stopPropagation(); onStartDiscussion(section, section.markdown); }}
-                    title="Discuss this section"
+                    title="Start a document conversation about this section"
                     style={{
                       ...smallButtonStyle, position: "absolute", bottom: 0, right: 0, transform: "translateY(50%)",
                       opacity: sectionHovered ? 1 : 0, pointerEvents: sectionHovered ? "auto" : "none",
@@ -243,7 +262,7 @@ export function LiveDocViewer({ docId, headRevisionId, refreshKey, focusedSectio
                       transition: "opacity 0.12s, color 0.12s",
                     }}
                   >
-                    ↳ Discuss
+                    ↳ Discuss & update
                   </button>
                 )}
               </div>
@@ -253,10 +272,26 @@ export function LiveDocViewer({ docId, headRevisionId, refreshKey, focusedSectio
             <button type="button" onMouseDown={(event) => event.preventDefault()}
               onClick={() => { onStartDiscussion?.(selectionAction.section, selectionAction.text); setSelectionAction(null); window.getSelection()?.removeAllRanges(); }}
               style={{ ...smallButtonStyle, position: "absolute", zIndex: 5, left: selectionAction.left, top: selectionAction.top, color: "#a855f7", borderColor: "#a855f7", background: "var(--bg-panel)" }}>
-              ↳ Discuss selection
+              ↳ Discuss & update selection
             </button>
           )}
         </div>
+        {conversationsOpen && (
+          <aside style={{ width: 230, overflowY: "auto", borderLeft: "1px solid var(--border)", padding: 10, background: "var(--bg-panel)" }}>
+            <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 8 }}>Document conversations</div>
+            {conversations.length === 0 ? (
+              <div style={{ color: "var(--text-dim)", fontSize: 11 }}>No conversations for this document yet.</div>
+            ) : conversations.map((conversation) => (
+              <button key={conversation.id} type="button" onClick={() => onOpenDiscussion?.(conversation.id)} disabled={!onOpenDiscussion}
+                style={{ display: "block", width: "100%", padding: "8px 6px", border: 0, borderBottom: "1px solid var(--border)", background: "transparent", color: "var(--text-muted)", cursor: onOpenDiscussion ? "pointer" : "default", textAlign: "left" }}>
+                <div style={{ color: "var(--text)", fontSize: 11, fontWeight: 600 }}>{conversation.sectionLabel}</div>
+                <div style={{ marginTop: 2, color: "var(--text-dim)", fontSize: 10 }}>
+                  {conversation.kind === "merge-response" ? "Added response" : "Section discussion"} · {new Date(conversation.node.entry.timestamp).toLocaleString()}
+                </div>
+              </button>
+            ))}
+          </aside>
+        )}
         {historyOpen && (
           <aside style={{ width: 210, overflowY: "auto", borderLeft: "1px solid var(--border)", padding: 10, background: "var(--bg-panel)" }}>
             <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 8 }}>Revision history</div>

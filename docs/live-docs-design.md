@@ -33,7 +33,7 @@ Examples include PR reviews, design documents, troubleshooting reports, diagrams
 | Domain kind | Do not require a business classification such as review/design/troubleshooting. |
 | Rendering metadata | Retain a format/media type and schema version where needed for safe rendering and targeting. |
 | Update approval | No mandatory preview or Apply button. Valid agent updates commit automatically in a bound conversation. |
-| History | Preserve revisions; allow restore, optional comparison, and explicit history pruning. |
+| History | Preserve both document revisions and the full document conversations that produced them; link each revision back to its originating turn. |
 | Ownership | Live docs have global identities and independent lifetimes; sessions link to them rather than own them. |
 | Adding conversation content | Send selected content to a doc-bound discussion; let the agent choose placement unless the user specifies a target. |
 | Discussion versus revision | One doc-bound conversation supports both. Questions can receive answers; change requests can directly update the doc. |
@@ -109,20 +109,20 @@ Global means accessible across sessions in this installation, not publicly share
 
 Keep the existing **Discuss in thread** behavior unchanged. In the first MVP, every completed assistant response has an **Add to Live Doc** footer action.
 
-The action targets the active/default Live Doc, shown beside the action and changeable from the Live Docs dropdown. Clicking it starts a doc-bound agent request with a controlled prompt containing:
+The action targets the active/default Live Doc, shown beside the action and changeable from the Live Docs dropdown. Clicking it starts a durable, whole-document conversation branch with a controlled prompt containing:
 
 - the complete assistant response as source material;
 - the current target doc and revision;
 - an instruction to merge the useful content into the doc;
 - an instruction to preserve a coherent section structure and avoid duplication.
 
-The agent chooses where the material belongs; the user does not choose an insertion location. A successful tool update commits a revision and the right panel updates automatically. The historical assistant response remains unchanged.
+The agent chooses where the material belongs; the user does not choose an insertion location. A successful tool update commits a revision and the right panel updates automatically. The historical assistant response remains unchanged. The one-turn merge remains available under the document's conversations and can be reopened or continued instead of being mixed into the main chat path.
 
 If the session has no Live Doc, the action first opens the new-doc flow rather than choosing an implicit destination. Adding selected fragments or placing an **Add** control directly on quoted text can follow later; the first MVP supports the complete assistant response.
 
-### 3.5 Live Update Discussion from the doc
+### 3.5 Document conversation from the doc
 
-Selecting a section or selecting text inside a section exposes **Live Update Discussion**. This starts a quoted branch using the existing discussion-thread mechanics, but the control, quote, target chip, and inline discussion use a distinct Live Doc accent color so they cannot be confused with an ordinary **Discuss in thread** branch.
+Selecting a section or selecting text inside a section exposes **Discuss and update**. This starts a durable quoted document-conversation branch using the existing discussion-thread mechanics, but the control, quote, target chip, and inline discussion use a distinct Live Doc accent color so they cannot be confused with an ordinary **Discuss in thread** branch. “Document conversation” is the persistent history; “document updated” describes only a turn that produced a revision.
 
 The composer shows the target doc and section; the quote comes from the current doc, not an old session response. On every submitted turn, the host supplies a controlled prompt with the current doc revision, stable section target, selected quote, and discussion request. The agent can answer, investigate, and apply a justified update through the doc update tool in the same run. A successful update commits immediately and appears reactively in the right panel—there is no separate revision mode or Apply stage.
 
@@ -224,7 +224,9 @@ Global live doc X
 
 “Thread” is the UI concept; a Pi session branch is the storage/context mechanism. They are not alternative implementations in the current application.
 
-Each discussion records its session and branch root, and the global doc index maps these to doc/region IDs. Use a namespaced custom session entry as a durable marker; keep canonical doc state and revisions outside the session tree. Treat any duplicated lookup index as rebuildable linkage, not a second authority for document content.
+Each document conversation records its session and branch root, and the global doc index maps these to doc/region IDs. Use a namespaced custom session entry as a durable marker; keep canonical doc state and revisions outside the session tree. Treat any duplicated lookup index as rebuildable linkage, not a second authority for document content.
+
+The session UI groups document conversations by linked Live Doc. Each Live Doc viewer exposes only its own conversations, including an empty state before the first one. Opening a conversation shows its complete user/assistant transcript and expandable tool activity; injected document snapshots remain hidden implementation context. Named conversation markers remain discoverable in branch navigation even before the main path gains a sibling.
 
 The current `start_thread` handler only accepts an assistant source on the active path. It cannot be called unchanged for every imported/global doc. The host adapter must create a discussion from a valid chosen session checkpoint and attach doc metadata, independently of whether that doc originated in an assistant response.
 
@@ -423,19 +425,21 @@ Use this design file in the right panel while discussing it in chat. Revise the 
 
 1. Add **Add to Live Doc** at the bottom of every completed assistant response; do not show it on a streaming/incomplete response.
 2. Show the current default target with the action and allow the user to choose another linked doc from the dropdown.
-3. Clicking the action sends a constructed, doc-bound prompt to the agent containing the response text, current doc content/revision, and instructions to integrate useful material into coherent sections without duplicating existing content.
+3. Clicking the action creates a durable whole-document conversation branch and sends a constructed, doc-bound prompt containing the response text, current doc content/revision, and instructions to integrate useful material into coherent sections without duplicating existing content.
 4. The agent chooses the insertion or restructuring location and calls the structured doc update tool. The historical response is not rewritten.
 5. A successful update creates a revision and updates the open right-panel doc reactively. If no doc exists, open **Add Live Doc** first and continue with the newly created doc.
+6. The merge conversation remains in document-conversation history and may be opened or continued without placing its generated request on the main conversation path.
 
-#### Live Update Discussion
+#### Document conversations
 
 1. Parse the Markdown doc into addressable sections with stable IDs.
-2. Selecting a section or text within one exposes **Live Update Discussion**.
-3. Start a quoted discussion branch using the existing thread mechanism, but use a distinct Live Doc highlight/accent for its action, quote, target chip, and inline panel.
+2. Selecting a section or text within one exposes **Discuss and update**.
+3. Start a quoted document-conversation branch using the existing thread mechanism, but use a distinct Live Doc highlight/accent for its action, quote, target chip, and inline panel.
 4. Bind the branch to the explicit doc ID, section ID, selected quote, and starting revision. Display the binding in the composer.
 5. Each sent message receives fresh current doc/section context through a constructed prompt. The agent may answer and update the bound section in the same run through the doc update tool.
 6. Apply a successful update immediately, save a revision, and update the right panel without refresh or a separate Apply step.
 7. Preserve ordinary **Discuss in thread** behavior and styling unchanged.
+8. Group completed conversations by Live Doc in the session, list each document's conversations in its viewer, and provide full-transcript and revision-to-conversation navigation.
 
 #### Persistence, recovery, and safety
 

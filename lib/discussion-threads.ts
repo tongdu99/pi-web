@@ -1,4 +1,5 @@
 import type { SessionTreeNode } from "./types";
+import { collectLiveDocThreads, findActiveLiveDocThread } from "./live-doc-discussions";
 
 export const DISCUSSION_THREAD_CUSTOM_TYPE = "pi-web.thread";
 
@@ -137,7 +138,9 @@ export function resolveInactiveSessionLeafId(
   leafId: string | null,
 ): string | null {
   const activeThread = findActiveDiscussionThread(collectDiscussionThreads(tree), leafId);
-  return activeThread ? resolveThreadMainLeafId(tree, activeThread) : leafId;
+  if (activeThread) return resolveThreadMainLeafId(tree, activeThread);
+  const activeLiveDocThread = findActiveLiveDocThread(collectLiveDocThreads(tree), leafId);
+  return activeLiveDocThread?.hostLeafId ?? leafId;
 }
 
 /** The `SessionManager` surface needed to reposition a restored leaf. */

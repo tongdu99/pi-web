@@ -71,8 +71,7 @@ export function documentOutcome(messages: AgentMessage[]): "updated" | "unchange
 function displayMessage(message: AgentMessage): AgentMessage | null {
   if (message.role === "user") return message;
   if (message.role !== "assistant") return null;
-  const content = message.content.filter((block) => block.type === "text" || block.type === "image");
-  return content.length ? { ...message, content } as AssistantMessage : null;
+  return message.content.length ? message as AssistantMessage : null;
 }
 
 export function LiveDocDiscussionPanel({ sessionId, thread, docTitle, modelNames, cwd, onOpenFile, onOpenChangedFile, onOpenUrl, onContinue }: Props) {
@@ -99,10 +98,18 @@ export function LiveDocDiscussionPanel({ sessionId, thread, docTitle, modelNames
 
   const delta = useMemo(() => loaded ? discussionDelta(loaded.context, thread) : null, [loaded, thread]);
   const visible = useMemo(() => (delta?.messages ?? []).map((message, index) => ({ message: displayMessage(message), entryId: delta?.entryIds[index] })).filter((item): item is { message: AgentMessage; entryId: string | undefined } => Boolean(item.message)), [delta]);
+  const toolResults = useMemo(() => {
+    const results = new Map<string, Extract<AgentMessage, { role: "toolResult" }>>();
+    for (const message of delta?.messages ?? []) {
+      if (message.role === "toolResult") results.set(message.toolCallId, message);
+    }
+    return results;
+  }, [delta]);
   const firstUser = visible.find((item) => item.message.role === "user")?.message;
-  const lastAssistant = visible.findLast((item) => item.message.role === "assistant")?.message;
+  const lastAssistant = visible.findLast((item) => item.message.role === "assistant" && messageText(item.message))?.message;
   const request = compact(messageText(firstUser));
   const response = compact(messageText(lastAssistant));
+  const turnCount = visible.filter((item) => item.message.role === "user").length;
   const outcome = delta ? documentOutcome(delta.messages) : null;
   const outcomeText = outcome === "updated"
     ? t("chat.documentUpdated", { title: docTitle })
@@ -114,7 +121,8 @@ export function LiveDocDiscussionPanel({ sessionId, thread, docTitle, modelNames
       <button type="button" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded}
         style={{ display: "block", width: "100%", padding: "9px 11px", border: 0, background: "transparent", color: "var(--text)", cursor: "pointer", textAlign: "left" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <strong style={{ minWidth: 0, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 11 }}>{t("chat.documentDiscussionTitle", { title: docTitle, section: thread.sectionLabel })}</strong>
+          <strong style={{ minWidth: 0, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 11 }}>{t("chat.documentConversationTitle", { section: thread.sectionLabel })}</strong>
+          {turnCount > 0 && <span style={{ color: "var(--text-dim)", fontSize: 10, whiteSpace: "nowrap" }}>{t("chat.conversationTurns", { count: turnCount })}</span>}
           {outcome && <span style={{ color: outcomeColor, fontSize: 10, whiteSpace: "nowrap" }}>{outcomeText}</span>}
           <span aria-hidden="true" style={{ color: "var(--text-dim)", fontSize: 14, transform: expanded ? "rotate(90deg)" : "none", transition: "transform 0.12s" }}>›</span>
         </div>
@@ -132,12 +140,12 @@ export function LiveDocDiscussionPanel({ sessionId, thread, docTitle, modelNames
       {expanded && loaded && (
         <div style={{ padding: "4px 11px 10px", borderTop: "1px solid var(--border)", background: "var(--bg)" }}>
           {visible.map(({ message, entryId }, index) => (
-            <MessageView key={entryId ?? `live-doc-discussion-${index}`} message={message} modelNames={modelNames} cwd={cwd}
+            <MessageView key={entryId ?? `live-doc-discussion-${index}`} message={message} toolResults={toolResults} modelNames={modelNames} cwd={cwd}
               onOpenFile={onOpenFile} onOpenChangedFile={onOpenChangedFile} onOpenUrl={onOpenUrl}
               entryId={entryId} showTimestamp={message.role === "assistant"} sessionId={sessionId} />
           ))}
           <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 4 }}>
-            <button type="button" onClick={onContinue} style={{ padding: "4px 8px", border: "1px solid var(--border)", borderRadius: 5, background: "var(--bg)", color: "#a855f7", cursor: "pointer", fontSize: 11 }}>{t("chat.continueDiscussion")}</button>
+            <button type="button" onClick={onContinue} style={{ padding: "4px 8px", border: "1px solid var(--border)", borderRadius: 5, background: "var(--bg)", color: "#a855f7", cursor: "pointer", fontSize: 11 }}>{t("chat.openConversation")}</button>
           </div>
         </div>
       )}

@@ -1620,7 +1620,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
   }, [addNotice, attach, isNew, loadSession]);
 
-  const handleStartLiveDocThread = useCallback(async (docId: string, sectionId: string, sectionLabel: string, selectedText: string) => {
+  const handleStartLiveDocThread = useCallback(async (
+    docId: string,
+    sectionId: string,
+    sectionLabel: string,
+    selectedText: string,
+    kind: "discussion" | "merge-response" = "discussion",
+  ) => {
     if (agentRunningRef.current || bashRunningRef.current) return null;
     if (!isNew && attachStateRef.current !== "attached" && !(await attach())) return null;
     const sid = sessionIdRef.current;
@@ -1632,6 +1638,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         sectionId,
         sectionLabel,
         selectedText,
+        kind,
       });
       if (result?.cancelled || !result?.threadEntryId) return null;
       await loadSession(sid);

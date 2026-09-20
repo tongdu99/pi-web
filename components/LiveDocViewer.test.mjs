@@ -44,6 +44,17 @@ test("a plain click switches existing document context without hijacking selecti
   assert.match(source, /if \(selection && !selection\.isCollapsed\) return/);
   assert.match(source, /onClick=\{\(event\) => switchDiscussionTarget\(section, event\)\}/);
   assert.match(source, /Click to switch the document context/);
-  assert.match(source, /title="Discuss this section"/);
-  assert.match(source, /↳ Discuss selection/);
+  assert.match(source, /title="Start a document conversation about this section"/);
+  assert.match(source, /↳ Discuss & update selection/);
+});
+
+test("each Live Doc exposes its own conversations and revision provenance", async () => {
+  const source = await readFile(new URL("./LiveDocViewer.tsx", import.meta.url), "utf8");
+  const appShell = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
+
+  assert.match(source, /Conversations \(\{conversations\.length\}\)/);
+  assert.match(source, /No conversations for this document yet/);
+  assert.match(source, /onOpenDiscussion\?\.\(conversation\.id\)/);
+  assert.match(source, /revision\.source\?\.discussionEntryId/);
+  assert.match(appShell, /liveDocConversations\.filter\(\(conversation\) => conversation\.docId === activeFileTab\.liveDocId\)/);
 });

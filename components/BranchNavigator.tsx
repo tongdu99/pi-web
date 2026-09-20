@@ -76,7 +76,35 @@ export function selectTopLevelBranches(tree: SessionTreeNode[]): SessionTreeNode
   if (tree.length > 1) return tree;
   if (tree.length === 0) return [];
   const first = compressChain(tree[0]).node;
-  return first.children.length > 1 ? first.children : [];
+  if (first.children.length > 1) return first.children;
+
+  // A named side conversation is logically a branch even before the user has
+  // appended another message to main. Keep it discoverable immediately rather
+  // than waiting for the tree to acquire a sibling arm.
+  const conversations: SessionTreeNode[] = [];
+  const pending = [...tree];
+  while (pending.length > 0) {
+    const current = pending.pop()!;
+    if (isConversationMarker(current.entry)) conversations.push(current);
+    pending.push(...current.children);
+  }
+  return conversations.reverse();
+}
+
+function isConversationMarker(entry: SessionEntry): boolean {
+  return entry.type === "custom" && "customType" in entry
+    && (entry.customType === "pi-web.thread" || entry.customType === "pi-web.live-doc-thread");
+}
+
+function conversationLabel(entry: SessionEntry): string | null {
+  if (!isConversationMarker(entry) || !("data" in entry) || !entry.data || typeof entry.data !== "object") return null;
+  const data = entry.data as Record<string, unknown>;
+  if (entry.customType === "pi-web.live-doc-thread") {
+    const section = typeof data.sectionLabel === "string" && data.sectionLabel.trim() ? data.sectionLabel.trim() : "Document";
+    return `Document · ${section}`;
+  }
+  const title = typeof data.title === "string" && data.title.trim() ? data.title.trim() : "Thread";
+  return `Thread · ${title}`;
 }
 
 function getLabel(entry: SessionEntry): string {
@@ -103,7 +131,7 @@ function getLabel(entry: SessionEntry): string {
 function hasBranch(nodes: SessionTreeNode[]): boolean {
   if (nodes.length > 1) return true;
   for (const node of nodes) {
-    if (node.children.length > 1) return true;
+    if (isConversationMarker(node.entry) || node.children.length > 1) return true;
     if (hasBranch(node.children)) return true;
   }
   return false;
@@ -122,12 +150,15 @@ function TreeNodeView({ node, activePathIds, depth, isLast, parentLines, onSelec
   const { node: rep, skipped, branchPreview, labelEntry } = compressChain(node);
   const isActive = activePathIds.has(rep.entry.id);
   const isOnPath = activePathIds.has(node.entry.id) || activePathIds.has(rep.entry.id);
-  const label = branchPreview?.text ?? getLabel(labelEntry);
-  const role = branchPreview
-    ? branchPreview.role ?? null
-    : isMessageEntry(labelEntry)
-      ? (labelEntry as { message: { role: string } }).message.role
-      : null;
+  const markerLabel = conversationLabel(node.entry);
+  const label = markerLabel ?? branchPreview?.text ?? getLabel(labelEntry);
+  const role = markerLabel
+    ? null
+    : branchPreview
+      ? branchPreview.role ?? null
+      : isMessageEntry(labelEntry)
+        ? (labelEntry as { message: { role: string } }).message.role
+        : null;
 
   return (
     <div>

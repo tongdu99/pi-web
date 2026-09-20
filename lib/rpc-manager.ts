@@ -776,19 +776,23 @@ export class AgentSessionWrapper {
         const sectionId = typeof command.sectionId === "string" ? command.sectionId : "";
         const sectionLabel = typeof command.sectionLabel === "string" ? command.sectionLabel.trim().slice(0, 120) : "";
         const selectedText = typeof command.selectedText === "string" ? command.selectedText.trim().slice(0, 50_000) : "";
-        if (!docId || !sectionId) throw new Error("A Live Doc and section are required");
+        const kind = command.kind === "merge-response" ? "merge-response" : "discussion";
+        if (!docId || (kind === "discussion" && !sectionId)) {
+          throw new Error(kind === "discussion" ? "A Live Doc and section are required" : "A Live Doc is required");
+        }
         const doc = await getLiveDoc(docId);
         if (!doc || !doc.sessionIds.includes(this.inner.sessionId)) throw new Error("Live Doc is not linked to this session");
         const head = doc.revisions.find((revision) => revision.id === doc.headRevisionId);
-        if (!head?.sections.some((section) => section.id === sectionId)) throw new Error("The selected Live Doc section no longer exists");
+        if (sectionId && !head?.sections.some((section) => section.id === sectionId)) throw new Error("The selected Live Doc section no longer exists");
         const hostLeafId = this.inner.sessionManager.getLeafId();
         const threadEntryId = this.inner.sessionManager.appendCustomEntry(LIVE_DOC_THREAD_CUSTOM_TYPE, {
           version: 1,
           docId,
           sectionId,
-          sectionLabel: sectionLabel || "Selected section",
+          sectionLabel: sectionLabel || (sectionId ? "Selected section" : "Whole document"),
           selectedText,
           hostLeafId,
+          kind,
           status: "open",
         });
         if (this.inner.agent.state) {

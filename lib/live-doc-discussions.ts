@@ -4,6 +4,8 @@ import { liveDocSectionPreview } from "./live-doc-target";
 export const LIVE_DOC_THREAD_CUSTOM_TYPE = "pi-web.live-doc-thread";
 export const LIVE_DOC_CONTEXT_CUSTOM_TYPE = "pi-web.live-doc-context";
 
+export type LiveDocConversationKind = "discussion" | "merge-response";
+
 export interface LiveDocThreadMetadata {
   version: 1;
   docId: string;
@@ -11,6 +13,7 @@ export interface LiveDocThreadMetadata {
   sectionLabel: string;
   selectedText: string;
   hostLeafId: string | null;
+  kind: LiveDocConversationKind;
   status: "open";
 }
 
@@ -28,15 +31,17 @@ export function parseLiveDocThreadMetadata(value: unknown): LiveDocThreadMetadat
   if (!record(value) || value.version !== 1 || typeof value.docId !== "string"
     || typeof value.sectionId !== "string" || typeof value.selectedText !== "string"
     || !(typeof value.hostLeafId === "string" || value.hostLeafId === null)) return null;
+  const kind: LiveDocConversationKind = value.kind === "merge-response" ? "merge-response" : "discussion";
   return {
     version: 1,
     docId: value.docId,
     sectionId: value.sectionId,
     sectionLabel: typeof value.sectionLabel === "string" && value.sectionLabel.trim()
       ? value.sectionLabel.trim()
-      : liveDocSectionPreview(value.selectedText),
+      : value.sectionId ? liveDocSectionPreview(value.selectedText) : "Whole document",
     selectedText: value.selectedText,
     hostLeafId: value.hostLeafId,
+    kind,
     status: "open",
   };
 }
@@ -75,7 +80,19 @@ export function collectLiveDocThreads(tree: SessionTreeNode[]): LiveDocThreadDes
     }
     stack.push(...node.children);
   }
-  return result;
+  return result.sort((a, b) => Date.parse(a.node.entry.timestamp) - Date.parse(b.node.entry.timestamp));
+}
+
+export function groupLiveDocThreadsByDoc(
+  threads: LiveDocThreadDescriptor[],
+): Map<string, LiveDocThreadDescriptor[]> {
+  const grouped = new Map<string, LiveDocThreadDescriptor[]>();
+  for (const thread of threads) {
+    const current = grouped.get(thread.docId) ?? [];
+    current.push(thread);
+    grouped.set(thread.docId, current);
+  }
+  return grouped;
 }
 
 export function findActiveLiveDocThread(threads: LiveDocThreadDescriptor[], leafId: string | null): LiveDocThreadDescriptor | null {

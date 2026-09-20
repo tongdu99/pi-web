@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect, useLayoutEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useGlobalKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { SessionSidebar } from "./SessionSidebar";
@@ -59,6 +59,7 @@ import type { FileViewerState } from "@/lib/file-viewer-state";
 import type { LiveDocRecord, LiveDocSection, LiveDocSummary } from "@/lib/live-docs";
 import { useLiveDocs } from "@/hooks/useLiveDocs";
 import { liveDocsEnabled } from "@/lib/live-doc-feature";
+import { collectLiveDocThreads } from "@/lib/live-doc-discussions";
 
 type SessionCopyField = "file" | "id";
 type AutoNameStatus =
@@ -193,6 +194,7 @@ export function AppShell() {
   }, [reclampRightPanelWidth, reclampSidebarWidth, rightPanelOpen]);
   const chatInputRef = useRef<ChatInputHandle | null>(null);
   const liveDocDiscussionHandlerRef = useRef<((docId: string, section: LiveDocSection, selectedText: string) => void) | null>(null);
+  const openLiveDocConversationHandlerRef = useRef<((discussionEntryId: string) => void) | null>(null);
   const [liveDocTargetState, setLiveDocTargetState] = useState<{
     docId: string;
     sectionId: string;
@@ -202,6 +204,9 @@ export function AppShell() {
   const handleLiveDocDiscussionHandlerChange = useCallback((handler: ((docId: string, section: LiveDocSection, selectedText: string) => void) | null) => {
     liveDocDiscussionHandlerRef.current = handler;
   }, []);
+  const handleOpenLiveDocConversationHandlerChange = useCallback((handler: ((discussionEntryId: string) => void) | null) => {
+    openLiveDocConversationHandlerRef.current = handler;
+  }, []);
   const topBarRef = useRef<HTMLDivElement>(null);
   const mobileToolbarRef = useRef<HTMLDivElement>(null);
   const languageBtnRef = useRef<HTMLButtonElement>(null);
@@ -210,6 +215,7 @@ export function AppShell() {
   const [branchTree, setBranchTree] = useState<SessionTreeNode[]>([]);
   const [branchActiveLeafId, setBranchActiveLeafId] = useState<string | null>(null);
   const branchLeafChangeFnRef = useRef<((leafId: string | null) => void) | null>(null);
+  const liveDocConversations = useMemo(() => collectLiveDocThreads(branchTree), [branchTree]);
 
   const handleBranchDataChange = useCallback((tree: SessionTreeNode[], activeLeafId: string | null, onLeafChange: (leafId: string | null) => void) => {
     setBranchTree(tree);
@@ -2368,6 +2374,7 @@ export function AppShell() {
               onCreateLiveDoc={liveDocsFeatureEnabled ? handleCreateLiveDoc : undefined}
               onOpenLiveDoc={liveDocsFeatureEnabled ? handleOpenLiveDoc : undefined}
               onLiveDocDiscussionHandlerChange={liveDocsFeatureEnabled ? handleLiveDocDiscussionHandlerChange : undefined}
+              onOpenLiveDocConversationHandlerChange={liveDocsFeatureEnabled ? handleOpenLiveDocConversationHandlerChange : undefined}
               onLiveDocTargetStateChange={liveDocsFeatureEnabled ? setLiveDocTargetState : undefined}
               soundEnabled={soundEnabled}
               onSoundToggle={onSoundToggle}
@@ -2526,16 +2533,21 @@ export function AppShell() {
           ) : activeFileTab?.kind === "live-doc" && activeFileTab.liveDocId ? (
             <LiveDocViewer
               docId={activeFileTab.liveDocId}
+              sessionId={selectedSession?.id}
               headRevisionId={liveDocs.find((doc) => doc.id === activeFileTab.liveDocId)?.headRevisionId}
               refreshKey={liveDocs.find((doc) => doc.id === activeFileTab.liveDocId)?.updatedAt}
               focusedSectionId={liveDocTargetState?.docId === activeFileTab.liveDocId ? liveDocTargetState.sectionId : undefined}
               focusedSectionActive={liveDocTargetState?.docId === activeFileTab.liveDocId ? liveDocTargetState.active : false}
+              conversations={liveDocConversations.filter((conversation) => conversation.docId === activeFileTab.liveDocId)}
               cwd={activeCwd ?? undefined}
               onOpenFile={handleOpenLinkedFile}
               onOpenUrl={handleOpenWebUrl}
               onChanged={handleLiveDocChanged}
               onStartDiscussion={(section, selectedText) => {
                 liveDocDiscussionHandlerRef.current?.(activeFileTab.liveDocId!, section, selectedText);
+              }}
+              onOpenDiscussion={(discussionEntryId) => {
+                openLiveDocConversationHandlerRef.current?.(discussionEntryId);
               }}
             />
           ) : activeFileTab?.filePath ? (
