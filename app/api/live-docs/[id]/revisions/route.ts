@@ -10,9 +10,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     if (!doc) return NextResponse.json({ error: "Live doc not found" }, { status: 404 });
     return NextResponse.json({
       headRevisionId: doc.headRevisionId,
-      revisions: doc.revisions.map(({ id, previousRevisionId, createdAt, summary, source }) => ({
-        id, previousRevisionId, createdAt, summary, source,
-      })).reverse(),
+      mainRevisionIds: [...doc.mainRevisionIds].reverse(),
+      archivedRevisionIds: [...doc.archivedRevisionIds].reverse(),
+      revisions: doc.revisions.map(({ id, previousRevisionId, createdAt, summary, source, change }) => ({
+        id, previousRevisionId, createdAt, summary, source, change,
+      })),
     });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });

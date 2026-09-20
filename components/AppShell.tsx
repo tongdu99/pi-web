@@ -2530,6 +2530,9 @@ export function AppShell() {
               refreshKey={liveDocs.find((doc) => doc.id === activeFileTab.liveDocId)?.updatedAt}
               focusedSectionId={liveDocTargetState?.docId === activeFileTab.liveDocId ? liveDocTargetState.sectionId : undefined}
               focusedSectionActive={liveDocTargetState?.docId === activeFileTab.liveDocId ? liveDocTargetState.active : false}
+              cwd={activeCwd ?? undefined}
+              onOpenFile={handleOpenLinkedFile}
+              onOpenUrl={handleOpenWebUrl}
               onChanged={handleLiveDocChanged}
               onStartDiscussion={(section, selectedText) => {
                 liveDocDiscussionHandlerRef.current?.(activeFileTab.liveDocId!, section, selectedText);

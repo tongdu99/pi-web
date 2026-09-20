@@ -36,6 +36,7 @@ import {
   type DiscussionThreadDescriptor,
 } from "@/lib/discussion-threads";
 import { DiscussionThreadPanel } from "./DiscussionThreadPanel";
+import { LiveDocDiscussionPanel } from "./LiveDocDiscussionPanel";
 import type { LiveDocRecord, LiveDocSection, LiveDocSummary } from "@/lib/live-docs";
 import { collectLiveDocThreads, findActiveLiveDocThread, type LiveDocThreadDescriptor } from "@/lib/live-doc-discussions";
 import { liveDocConversationLabel, liveDocSectionPreview } from "@/lib/live-doc-target";
@@ -370,6 +371,7 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
     selectedText: string;
   } | null>(null);
   const [activeLiveDocThreadHint, setActiveLiveDocThreadHint] = useState<string | null>(null);
+  const [liveDocContextMode, setLiveDocContextMode] = useState<"section" | "relevant" | "full">("relevant");
   const [expandedInlineThreadId, setExpandedInlineThreadId] = useState<string | null>(null);
   const [threadHostSnapshot, setThreadHostSnapshot] = useState<{
     threadId: string;
@@ -413,7 +415,7 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
   );
   const activeLiveDocThread = activeLiveDocThreadFromTree
     ?? (activeLiveDocThreadHint ? liveDocThreads.find((thread) => thread.id === activeLiveDocThreadHint) ?? null : null);
-  const liveDocTargetState = pendingLiveDocThread
+  const liveDocTargetState = useMemo(() => pendingLiveDocThread
     ? { ...pendingLiveDocThread, active: false }
     : activeLiveDocThread
       ? {
@@ -423,7 +425,7 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
         selectedText: activeLiveDocThread.selectedText,
         active: true,
       }
-      : null;
+      : null, [activeLiveDocThread, pendingLiveDocThread]);
   const liveDocTargetLabel = liveDocTargetState
     ? liveDocConversationLabel(
       liveDocs.find((doc) => doc.id === liveDocTargetState.docId)?.title ?? "Live Doc",
@@ -453,7 +455,7 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
 
   useEffect(() => {
     onLiveDocTargetStateChange?.(liveDocTargetState);
-  }, [liveDocTargetState?.active, liveDocTargetState?.docId, liveDocTargetState?.sectionId, liveDocTargetState?.sectionLabel, liveDocTargetState?.selectedText, onLiveDocTargetStateChange]);
+  }, [liveDocTargetState, onLiveDocTargetStateChange]);
 
   useEffect(() => () => onLiveDocTargetStateChange?.(null), [onLiveDocTargetStateChange]);
 
@@ -462,6 +464,7 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
     setActiveThreadHint(null);
     setPendingLiveDocThread(null);
     setActiveLiveDocThreadHint(null);
+    setLiveDocContextMode("relevant");
     setExpandedInlineThreadId(null);
     setThreadHostSnapshot(null);
     setLoadedThreadHost(null);
@@ -621,6 +624,7 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
         sectionId: pendingLiveDocThread.sectionId,
         selectedText: pendingLiveDocThread.selectedText,
         discussionEntryId: result.threadEntryId,
+        contextMode: liveDocContextMode,
       }, images);
       return;
     }
@@ -638,6 +642,7 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
         sectionId: activeLiveDocThread.sectionId,
         selectedText: activeLiveDocThread.selectedText,
         discussionEntryId: activeLiveDocThread.id,
+        contextMode: liveDocContextMode,
       }, images);
       return;
     }
@@ -664,7 +669,7 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
     setExpandedInlineThreadId(result.threadEntryId);
     setPendingThread(null);
     await handleSend(message, images);
-  }, [activeEntryIds, activeLiveDocThread, activeMessages, chatInputRef, handleLiveDocPrompt, handleSend, handleStartLiveDocThread, handleStartThread, liveDocs, pendingLiveDocThread, pendingThread]);
+  }, [activeEntryIds, activeLiveDocThread, activeMessages, chatInputRef, handleLiveDocPrompt, handleSend, handleStartLiveDocThread, handleStartThread, liveDocContextMode, liveDocs, pendingLiveDocThread, pendingThread]);
 
   const handleContinueThread = useCallback(async (thread: DiscussionThreadDescriptor) => {
     if (sessionBusy) return;
@@ -675,6 +680,18 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
     setActiveThreadHint(thread.id);
     setExpandedInlineThreadId(thread.id);
   }, [entryIds, handleLeafChange, messages, sessionBusy]);
+
+  const handleContinueLiveDocThread = useCallback(async (thread: LiveDocThreadDescriptor) => {
+    if (sessionBusy) return;
+    const switched = await handleLeafChange(thread.latestLeafId);
+    if (!switched) return;
+    setActiveLiveDocThreadHint(thread.id);
+    const doc = liveDocs.find((candidate) => candidate.id === thread.docId);
+    if (doc) {
+      onDefaultLiveDocChange?.(doc.id);
+      onOpenLiveDoc?.(doc);
+    }
+  }, [handleLeafChange, liveDocs, onDefaultLiveDocChange, onOpenLiveDoc, sessionBusy]);
 
   const handleReturnToMain = useCallback(async () => {
     if (!activeThread || sessionBusy) return;
@@ -901,6 +918,8 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
             : activeThread
               ? { label: activeThread.title, active: true }
               : null}
+      liveDocContextMode={liveDocTargetState ? liveDocContextMode : undefined}
+      onLiveDocContextModeChange={liveDocTargetState ? setLiveDocContextMode : undefined}
       onConversationTargetClear={pendingLiveDocThread
         ? () => setPendingLiveDocThread(null)
         : activeLiveDocThread
@@ -1387,6 +1406,27 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
                 </>
               );
             })()}
+            {!activeThread && !activeLiveDocThread && liveDocThreads.length > 0 && (
+              <section aria-label="Document discussions" style={{ margin: "10px 0 16px" }}>
+                <div style={{ margin: "0 0 5px 2px", color: "var(--text-dim)", fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                  {t("chat.documentDiscussions", { count: liveDocThreads.length })}
+                </div>
+                {liveDocThreads.map((thread) => (
+                  <LiveDocDiscussionPanel
+                    key={thread.id}
+                    sessionId={session?.id ?? sessionIdRef.current ?? ""}
+                    thread={thread}
+                    docTitle={liveDocs.find((doc) => doc.id === thread.docId)?.title ?? "Live Doc"}
+                    modelNames={modelNames}
+                    cwd={messageCwd}
+                    onOpenFile={onOpenFile}
+                    onOpenChangedFile={onOpenChangedFile}
+                    onOpenUrl={onOpenUrl}
+                    onContinue={() => { void handleContinueLiveDocThread(thread); }}
+                  />
+                ))}
+              </section>
+            )}
             {!activeThread && !showMainLiveProcessPanel && streamState.isStreaming && hasStreamingContent && streamState.streamingMessage && (
               <MessageView message={streamState.streamingMessage as AgentMessage} isStreaming modelNames={modelNames} cwd={messageCwd} onOpenFile={onOpenFile} onOpenUrl={onOpenUrl} />
             )}

@@ -83,6 +83,8 @@ interface Props {
   /** Session token, cost, and context status supplied by the application shell. */
   sessionStatusControl?: React.ReactNode;
   conversationTarget?: { label: string; active: boolean; tone?: "thread" | "live-doc" } | null;
+  liveDocContextMode?: "section" | "relevant" | "full";
+  onLiveDocContextModeChange?: (mode: "section" | "relevant" | "full") => void;
   onConversationTargetClear?: () => void;
   draftKey?: string;
   /** Session working directory — enables the @ file autocomplete menu */
@@ -471,7 +473,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   slashCommands, slashCommandsLoading, onLoadSlashCommands,
   onBuiltinCommand,
   soundEnabled, onSoundToggle, onAudioUnlock, sessionStatusControl,
-  conversationTarget, onConversationTargetClear,
+  conversationTarget, liveDocContextMode, onLiveDocContextModeChange, onConversationTargetClear,
   onPromptWithStreamingBehavior,
   draftKey,
   cwd,
@@ -1639,8 +1641,32 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           }}>
             <span aria-hidden="true" style={{ color: targetColor }}>↳</span>
             <span style={{ minWidth: 0, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {t(conversationTarget.active ? "chat.replyingInThread" : "chat.startingThread", { title: conversationTarget.label })}
+              {t(conversationTarget.tone === "live-doc"
+                ? "chat.liveDocTarget"
+                : conversationTarget.active ? "chat.replyingInThread" : "chat.startingThread", { title: conversationTarget.label })}
             </span>
+            {conversationTarget.tone === "live-doc" && liveDocContextMode && onLiveDocContextModeChange && (
+              <select
+                aria-label={t("chat.liveDocContext")}
+                title={t("chat.liveDocContextTitle")}
+                value={liveDocContextMode}
+                disabled={isStreaming}
+                onChange={(event) => onLiveDocContextModeChange(event.target.value as "section" | "relevant" | "full")}
+                style={{
+                  minWidth: 0,
+                  padding: "2px 4px",
+                  border: "1px solid var(--border)",
+                  borderRadius: 4,
+                  background: "var(--bg)",
+                  color: "var(--text-muted)",
+                  fontSize: 11,
+                }}
+              >
+                <option value="section">{t("chat.liveDocContextSection")}</option>
+                <option value="relevant">{t("chat.liveDocContextRelevant")}</option>
+                <option value="full">{t("chat.liveDocContextFull")}</option>
+              </select>
+            )}
             {onConversationTargetClear && !isStreaming && (
               <button
                 type="button"

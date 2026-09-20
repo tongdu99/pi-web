@@ -1,4 +1,4 @@
-import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, initTheme, SessionManager, SettingsManager, Theme } from "@earendil-works/pi-coding-agent";
 import { KeybindingsManager as TuiKeybindingsManager, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import { randomUUID } from "crypto";
@@ -38,6 +38,7 @@ import {
   LIVE_DOC_UPDATE_TOOL,
   setActiveLiveDocBinding,
   type ActiveLiveDocBinding,
+  type LiveDocContextMode,
 } from "./live-doc-agent";
 import { LIVE_DOC_CONTEXT_CUSTOM_TYPE, LIVE_DOC_THREAD_CUSTOM_TYPE } from "./live-doc-discussions";
 import { getLiveDoc } from "./live-docs";
@@ -522,6 +523,24 @@ export class AgentSessionWrapper {
           }
           const promptImages = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
           const streamingBehavior = command.streamingBehavior as "steer" | "followUp" | undefined;
+          const withoutOldLiveDocContexts = (messages: AgentMessage[]) => messages.filter((message) => !(
+            message.role === "custom"
+            && (message as AgentMessage & { customType?: string }).customType === LIVE_DOC_CONTEXT_CUSTOM_TYPE
+          ));
+          const persistedContextMessages = (): AgentMessage[] => {
+            const manager = this.inner.sessionManager as typeof this.inner.sessionManager & {
+              buildSessionContext?: () => { messages: AgentMessage[] };
+            };
+            return withoutOldLiveDocContexts(
+              manager.buildSessionContext?.().messages ?? this.inner.agent.state?.messages ?? [],
+            );
+          };
+          // Live Doc context is request-scoped. Older versions persisted the
+          // full document as context-visible messages, so also strip those
+          // entries before ordinary prompts in existing sessions.
+          if (!this.inner.isStreaming && this.pendingPromptCount === 0 && this.inner.agent.state) {
+            this.inner.agent.state.messages = persistedContextMessages();
+          }
           let liveDocBinding: ActiveLiveDocBinding | null = null;
           if (type === "live_doc_prompt") {
             if (this.inner.isStreaming || this.pendingPromptCount > 0 || streamingBehavior) {
@@ -530,6 +549,10 @@ export class AgentSessionWrapper {
             const docId = typeof command.docId === "string" ? command.docId : "";
             const expectedRevisionId = typeof command.expectedRevisionId === "string" ? command.expectedRevisionId : "";
             const purpose = command.purpose === "discussion" ? "discussion" : "merge-response";
+            const requestedContextMode = command.contextMode;
+            const contextMode: LiveDocContextMode = requestedContextMode === "section" || requestedContextMode === "full"
+              ? requestedContextMode
+              : "relevant";
             if (!docId || !expectedRevisionId) throw new Error("Live Doc target and revision are required");
             liveDocBinding = {
               requestId: typeof command.requestId === "string" ? command.requestId : randomUUID(),
@@ -540,17 +563,29 @@ export class AgentSessionWrapper {
               ...(typeof command.selectedText === "string" ? { selectedText: command.selectedText.slice(0, 50_000) } : {}),
               ...(typeof command.sourceMarkdown === "string" ? { sourceMarkdown: command.sourceMarkdown.slice(0, 200_000) } : {}),
               ...(typeof command.discussionEntryId === "string" ? { discussionEntryId: command.discussionEntryId } : {}),
+              contextMode,
               purpose,
             };
             const context = await buildLiveDocContext(liveDocBinding);
-            this.inner.sessionManager.appendCustomMessageEntry(
-              LIVE_DOC_CONTEXT_CUSTOM_TYPE,
-              context,
-              false,
-              { docId, sectionId: liveDocBinding.sectionId, requestId: liveDocBinding.requestId },
-            );
+            this.inner.sessionManager.appendCustomEntry(LIVE_DOC_CONTEXT_CUSTOM_TYPE, {
+              docId,
+              sectionId: liveDocBinding.sectionId,
+              requestId: liveDocBinding.requestId,
+              contextMode,
+            });
             if (this.inner.agent.state) {
-              this.inner.agent.state.messages = this.inner.sessionManager.buildSessionContext().messages;
+              const baseMessages = persistedContextMessages();
+              this.inner.agent.state.messages = [
+                ...baseMessages,
+                {
+                  role: "custom",
+                  customType: LIVE_DOC_CONTEXT_CUSTOM_TYPE,
+                  content: context,
+                  display: false,
+                  details: { docId, sectionId: liveDocBinding.sectionId, requestId: liveDocBinding.requestId, contextMode },
+                  timestamp: Date.now(),
+                },
+              ];
             }
             setActiveLiveDocBinding(liveDocBinding);
             // Defensive for wrappers created before the Live Docs feature was
@@ -579,7 +614,12 @@ export class AgentSessionWrapper {
             if (promptSettled) return;
             promptSettled = true;
             this.pendingPromptCount = Math.max(0, this.pendingPromptCount - 1);
-            if (liveDocBinding) clearActiveLiveDocBinding(liveDocBinding.sessionId, liveDocBinding.requestId);
+            if (liveDocBinding) {
+              clearActiveLiveDocBinding(liveDocBinding.sessionId, liveDocBinding.requestId);
+              if (this.inner.agent.state) {
+                this.inner.agent.state.messages = persistedContextMessages();
+              }
+            }
             this.resetIdleTimer();
             notifyRunningChange();
           };
@@ -730,7 +770,7 @@ export class AgentSessionWrapper {
 
       case "start_live_doc_thread": {
         if (this.inner.isBashRunning || this.inner.isStreaming || this.pendingPromptCount > 0) {
-          throw new Error("Cannot start a Live Update Discussion while the session is busy");
+          throw new Error("Cannot start a document discussion while the session is busy");
         }
         const docId = typeof command.docId === "string" ? command.docId : "";
         const sectionId = typeof command.sectionId === "string" ? command.sectionId : "";

@@ -11,3 +11,12 @@ test("publishes the persistent Live Doc section target and allows replacing it",
   assert.match(source, /sectionLabel: liveDocSectionPreview\(section\.markdown\)/);
   assert.match(source, /pendingLiveDocThread\.sectionLabel/);
 });
+
+test("keeps completed document discussions discoverable from the main conversation", async () => {
+  const source = await readFile(new URL("./ChatWindow.tsx", import.meta.url), "utf8");
+
+  assert.match(source, /t\("chat\.documentDiscussions", \{ count: liveDocThreads\.length \}\)/);
+  assert.match(source, /<LiveDocDiscussionPanel/);
+  assert.match(source, /handleContinueLiveDocThread\(thread\)/);
+  assert.match(source, /!activeThread && !activeLiveDocThread && liveDocThreads\.length > 0/);
+});

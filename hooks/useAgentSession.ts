@@ -126,6 +126,7 @@ export interface LiveDocPromptRequest {
   sectionId?: string;
   selectedText?: string;
   discussionEntryId?: string;
+  contextMode?: "section" | "relevant" | "full";
 }
 
 export type AgentPhase =
@@ -1636,7 +1637,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       await loadSession(sid);
       return { threadEntryId: result.threadEntryId, hostLeafId: result.hostLeafId ?? null };
     } catch (e) {
-      console.error("Failed to start Live Update Discussion:", e);
+      console.error("Failed to start document discussion:", e);
       addNotice({ type: "error", message: e instanceof Error ? e.message : String(e) });
       return null;
     }

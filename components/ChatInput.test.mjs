@@ -39,6 +39,29 @@ test("shows the single composer target for a discussion thread", () => {
   assert.match(html, /Return to main/);
 });
 
+test("presents a Live Doc target as context rather than a required update", () => {
+  const html = renderToStaticMarkup(
+    React.createElement(
+      I18nProvider,
+      null,
+      React.createElement(ChatInput, {
+        onSend() {},
+        onAbort() {},
+        isStreaming: false,
+        conversationTarget: { label: "Review › Finding", active: true, tone: "live-doc" },
+        liveDocContextMode: "relevant",
+        onLiveDocContextModeChange() {},
+      }),
+    ),
+  );
+
+  assert.match(html, /Context: Review › Finding/);
+  assert.match(html, /aria-label="Document context"/);
+  assert.match(html, /<option value="section">Section<\/option>/);
+  assert.match(html, /<option value="relevant" selected="">Relevant<\/option>/);
+  assert.match(html, /<option value="full">Full document<\/option>/);
+});
+
 test("renders the upstream model error", () => {
   const html = renderToStaticMarkup(
     React.createElement(ModelErrorBanner, {

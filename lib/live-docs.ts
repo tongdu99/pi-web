@@ -13,13 +13,22 @@ export interface LiveDocSection {
   markdown: string;
 }
 
+export interface LiveDocRevisionChange {
+  targetSectionId?: string;
+  changedSectionIds: string[];
+  addedSectionIds: string[];
+  removedSectionIds: string[];
+}
+
 export interface LiveDocRevision {
   id: string;
+  /** Retained for backwards compatibility; active history is defined by mainRevisionIds. */
   previousRevisionId: string | null;
   createdAt: string;
   sections: LiveDocSection[];
   source?: { sessionId?: string; discussionEntryId?: string; requestId?: string };
   summary?: string;
+  change?: LiveDocRevisionChange;
 }
 
 export interface LiveDocRecord {
@@ -31,6 +40,10 @@ export interface LiveDocRecord {
   updatedAt: string;
   sessionIds: string[];
   headRevisionId: string;
+  /** Linear history ending at headRevisionId. */
+  mainRevisionIds: string[];
+  /** Recoverable snapshots displaced by restores, ordered by archive insertion. */
+  archivedRevisionIds: string[];
   revisions: LiveDocRevision[];
 }
 
@@ -122,6 +135,38 @@ export function splitLiveDocSections(markdown: string, previous: LiveDocSection[
   });
 }
 
+function normalizeRevisionLists(doc: LiveDocRecord): LiveDocRecord {
+  const revisionIds = new Set(doc.revisions.map((revision) => revision.id));
+  const revisionsById = new Map(doc.revisions.map((revision) => [revision.id, revision]));
+  // Backfill section-level metadata for snapshots written before it existed so
+  // their changed sections can still be highlighted during hover previews.
+  doc.revisions.forEach((revision, index) => {
+    if (revision.change) return;
+    const previous = (revision.previousRevisionId ? revisionsById.get(revision.previousRevisionId) : undefined)
+      ?? doc.revisions[index - 1];
+    revision.change = revisionChange(previous?.sections ?? [], revision.sections);
+  });
+  // Documents written before list-based history had one chronological chain.
+  if (!Array.isArray(doc.mainRevisionIds)) doc.mainRevisionIds = doc.revisions.map((revision) => revision.id);
+  if (!Array.isArray(doc.archivedRevisionIds)) doc.archivedRevisionIds = [];
+  doc.mainRevisionIds = doc.mainRevisionIds.filter((id, index, ids) => revisionIds.has(id) && ids.indexOf(id) === index);
+  doc.archivedRevisionIds = doc.archivedRevisionIds.filter((id, index, ids) =>
+    revisionIds.has(id) && !doc.mainRevisionIds.includes(id) && ids.indexOf(id) === index);
+  if (!doc.mainRevisionIds.includes(doc.headRevisionId)) doc.mainRevisionIds.push(doc.headRevisionId);
+  return doc;
+}
+
+function revisionChange(previous: LiveDocSection[], next: LiveDocSection[], targetSectionId?: string): LiveDocRevisionChange {
+  const previousById = new Map(previous.map((section) => [section.id, section.markdown]));
+  const nextById = new Map(next.map((section) => [section.id, section.markdown]));
+  return {
+    ...(targetSectionId ? { targetSectionId } : {}),
+    changedSectionIds: next.filter((section) => previousById.has(section.id) && previousById.get(section.id) !== section.markdown).map((section) => section.id),
+    addedSectionIds: next.filter((section) => !previousById.has(section.id)).map((section) => section.id),
+    removedSectionIds: previous.filter((section) => !nextById.has(section.id)).map((section) => section.id),
+  };
+}
+
 export function liveDocContent(doc: LiveDocRecord, revisionId = doc.headRevisionId): string {
   const revision = doc.revisions.find((item) => item.id === revisionId);
   if (!revision) throw new Error("Live doc revision not found");
@@ -166,7 +211,7 @@ export async function getLiveDoc(id: string, root?: string): Promise<LiveDocReco
     if (parsed.schemaVersion !== LIVE_DOC_SCHEMA_VERSION || parsed.id !== id || !Array.isArray(parsed.revisions)) {
       throw new Error("Unsupported live doc data");
     }
-    return parsed;
+    return normalizeRevisionLists(parsed);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw error;
@@ -212,6 +257,7 @@ export async function createLiveDoc(sessionId: string, title?: string, root?: st
       sections: [],
       source: { sessionId },
       summary: "Created live doc",
+      change: { changedSectionIds: [], addedSectionIds: [], removedSectionIds: [] },
     };
     const doc: LiveDocRecord = {
       schemaVersion: LIVE_DOC_SCHEMA_VERSION,
@@ -222,6 +268,8 @@ export async function createLiveDoc(sessionId: string, title?: string, root?: st
       updatedAt: now,
       sessionIds: [sessionId],
       headRevisionId: revision.id,
+      mainRevisionIds: [revision.id],
+      archivedRevisionIds: [],
       revisions: [revision],
     };
     await writeRecord(doc, root);
@@ -291,8 +339,10 @@ export async function updateLiveDoc(id: string, input: UpdateLiveDocInput, root?
         ...(input.requestId ? { requestId: input.requestId } : {}),
       },
       ...(input.summary?.trim() ? { summary: input.summary.trim().slice(0, 300) } : {}),
+      change: revisionChange(head.sections, sections, input.sectionId),
     };
     doc.revisions.push(revision);
+    doc.mainRevisionIds.push(revision.id);
     doc.headRevisionId = revision.id;
     doc.updatedAt = now;
     await writeRecord(doc, root);
@@ -302,15 +352,33 @@ export async function updateLiveDoc(id: string, input: UpdateLiveDocInput, root?
 }
 
 export async function restoreLiveDoc(id: string, revisionId: string, expectedRevisionId: string, root?: string): Promise<LiveDocRecord> {
-  const doc = await getLiveDoc(id, root);
-  if (!doc) throw new Error("Live doc not found");
-  const target = doc.revisions.find((revision) => revision.id === revisionId);
-  if (!target) throw new Error("Live doc revision not found");
-  return updateLiveDoc(id, {
-    expectedRevisionId,
-    replacementMarkdown: target.sections.map((section) => section.markdown).join("\n\n"),
-    summary: `Restored revision ${revisionId.slice(0, 8)}`,
-  }, root);
+  return withLock(id, async () => {
+    const doc = await getLiveDoc(id, root);
+    if (!doc) throw new Error("Live doc not found");
+    if (doc.headRevisionId !== expectedRevisionId) throw new LiveDocConflictError(doc.headRevisionId);
+    if (!doc.revisions.some((revision) => revision.id === revisionId)) throw new Error("Live doc revision not found");
+    if (revisionId === doc.headRevisionId) return doc;
+
+    const mainIndex = doc.mainRevisionIds.indexOf(revisionId);
+    if (mainIndex >= 0) {
+      const displaced = doc.mainRevisionIds.splice(mainIndex + 1);
+      for (const displacedId of displaced) {
+        if (!doc.archivedRevisionIds.includes(displacedId)) doc.archivedRevisionIds.push(displacedId);
+      }
+    } else {
+      const archivedIndex = doc.archivedRevisionIds.indexOf(revisionId);
+      if (archivedIndex < 0) throw new Error("Live doc revision is not recoverable");
+      doc.archivedRevisionIds.splice(archivedIndex, 1);
+      doc.archivedRevisionIds = [...new Set([...doc.mainRevisionIds, ...doc.archivedRevisionIds])];
+      doc.mainRevisionIds = [revisionId];
+    }
+
+    doc.headRevisionId = revisionId;
+    doc.updatedAt = new Date().toISOString();
+    await writeRecord(doc, root);
+    publishLiveDocEvent({ type: "updated", docId: id, revisionId, sessionIds: doc.sessionIds });
+    return doc;
+  });
 }
 
 export type LiveDocEvent = {
