@@ -298,6 +298,11 @@ export class AgentSessionWrapper {
       && this.inner.getActiveToolNames().includes(name);
   }
 
+  /** Capability probe used to replace wrappers retained across a hot reload. */
+  supportsLiveDocMergeConversations(): boolean {
+    return true;
+  }
+
   /**
    * True when this session owns its working directory, i.e. it was started by
    * an attach and its `session_start` handlers reconciled the checkout.

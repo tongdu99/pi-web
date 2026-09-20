@@ -19,11 +19,15 @@ export async function POST(
     // Fast path: already-running session
     let existing = getRpcSession(id);
     let restoreAttachment = false;
-    if (existing?.isAlive() && body.type === "live_doc_prompt" && !existing.hasActiveTool?.(LIVE_DOC_UPDATE_TOOL)) {
+    const needsLiveDocToolUpgrade = body.type === "live_doc_prompt"
+      && !existing?.hasActiveTool?.(LIVE_DOC_UPDATE_TOOL);
+    const needsMergeConversationUpgrade = body.type === "start_live_doc_thread"
+      && body.kind === "merge-response"
+      && !existing?.supportsLiveDocMergeConversations?.();
+    if (existing?.isAlive() && (needsLiveDocToolUpgrade || needsMergeConversationUpgrade)) {
       // globalThis keeps wrappers alive across dev hot reloads and application
-      // upgrades. Recreate an older wrapper whose provider tool surface was
-      // built before Live Docs existed; activating a newly seen tool only at
-      // prompt admission is too late for providers that snapshot definitions.
+      // upgrades. Recreate wrappers whose provider tool surface or command
+      // protocol predates the requested Live Doc operation.
       restoreAttachment = existing.isAttached();
       await existing.shutdown();
       existing = undefined;
