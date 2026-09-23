@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { resolveSessionPath } from "@/lib/session-reader";
 import { startRpcSession, getRpcSession } from "@/lib/rpc-manager";
+import { LIVE_DOC_UPDATE_TOOL } from "@/lib/live-doc-agent";
 
 // POST /api/agent/[id] - Send a command to an existing session
 export async function POST(
@@ -16,10 +17,27 @@ export async function POST(
     commandType = typeof body.type === "string" ? body.type : undefined;
 
     // Fast path: already-running session
-    const existing = getRpcSession(id);
+    let existing = getRpcSession(id);
+    let restoreAttachment = false;
+    const needsLiveDocToolUpgrade = body.type === "live_doc_prompt"
+      && !existing?.hasActiveTool?.(LIVE_DOC_UPDATE_TOOL);
+    const needsMergeConversationUpgrade = body.type === "start_live_doc_thread"
+      && body.kind === "merge-response"
+      && !existing?.supportsLiveDocMergeConversations?.();
+    const needsWholeDocumentConversationUpgrade = body.type === "start_live_doc_thread"
+      && !body.sectionId
+      && !existing?.supportsWholeLiveDocConversations?.();
+    if (existing?.isAlive() && (needsLiveDocToolUpgrade || needsMergeConversationUpgrade || needsWholeDocumentConversationUpgrade)) {
+      // globalThis keeps wrappers alive across dev hot reloads and application
+      // upgrades. Recreate wrappers whose provider tool surface or command
+      // protocol predates the requested Live Doc operation.
+      restoreAttachment = existing.isAttached();
+      await existing.shutdown();
+      existing = undefined;
+    }
     if (existing?.isAlive()) {
       const result = await existing.send(body);
-      promptAccepted = body.type === "prompt";
+      promptAccepted = body.type === "prompt" || body.type === "live_doc_prompt";
       return NextResponse.json({ success: true, data: result });
     }
 
@@ -27,21 +45,26 @@ export async function POST(
     if (!filePath) {
       return NextResponse.json({
         error: "Session not found",
-        ...(body.type === "prompt"
+        ...(body.type === "prompt" || body.type === "live_doc_prompt"
           ? { code: "prompt_rejected", accepted: false }
           : {}),
       }, { status: 404 });
     }
 
-    const { session } = await startRpcSession(id, filePath, undefined);
+    const { session } = await startRpcSession(id, filePath, undefined, restoreAttachment ? {
+      attach: true,
+      sessionStartEvent: { type: "session_start", reason: "resume" },
+    } : undefined);
+    if (restoreAttachment) await session.waitUntilReady();
     const result = await session.send(body);
-    promptAccepted = body.type === "prompt";
+    promptAccepted = body.type === "prompt" || body.type === "live_doc_prompt";
 
     return NextResponse.json({ success: true, data: result });
   } catch (error) {
     return NextResponse.json({
       error: error instanceof Error ? error.message : String(error),
-      ...(commandType === "prompt" && !promptAccepted
+      ...(((commandType === "prompt" && !promptAccepted)
+        || (commandType === "live_doc_prompt" && !promptAccepted))
         ? { code: "prompt_rejected", accepted: false }
         : {}),
     }, { status: 500 });

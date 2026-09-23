@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect, useLayoutEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useGlobalKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { SessionSidebar } from "./SessionSidebar";
@@ -14,6 +14,8 @@ import { SkillsConfig } from "./SkillsConfig";
 import { PluginsConfig } from "./PluginsConfig";
 import { ProjectTrustDialog } from "./ProjectTrustDialog";
 import { BranchNavigator } from "./BranchNavigator";
+import { LiveDocsMenu } from "./LiveDocsMenu";
+import { LiveDocViewer } from "./LiveDocViewer";
 import { useTheme } from "@/hooks/useTheme";
 import { useI18n } from "@/hooks/useI18n";
 import { useIsMobile } from "@/hooks/useIsMobile";
@@ -54,6 +56,11 @@ import type { ProjectTrustStatus } from "@/lib/api-types";
 import type { ChatInputHandle } from "./ChatInput";
 import type { SessionStatsInfo } from "@/lib/pi-types";
 import type { FileViewerState } from "@/lib/file-viewer-state";
+import type { LiveDocRecord, LiveDocSection, LiveDocSummary } from "@/lib/live-docs";
+import { useLiveDocs } from "@/hooks/useLiveDocs";
+import { liveDocsEnabled } from "@/lib/live-doc-feature";
+import { collectLiveDocThreads } from "@/lib/live-doc-discussions";
+import type { LiveDocComposerState } from "@/lib/live-doc-composer";
 
 type SessionCopyField = "file" | "id";
 type AutoNameStatus =
@@ -75,6 +82,7 @@ export function AppShell() {
   const { locale, setLocale, t: translate, supportedLocales } = useI18n();
   const themeMenuLabel = translate(themeLabelKey).replace(/\s*\([^)]*\)\s*$/, "");
   const isMobile = useIsMobile();
+  const liveDocsFeatureEnabled = liveDocsEnabled();
   useViewportHeight();
   // Audio ownership lives here (not in ChatWindow) so the completion tone can
   // also fire for tasks finishing in a non-active workspace whose ChatWindow
@@ -186,6 +194,22 @@ export function AppShell() {
     reclampRightPanelWidth();
   }, [reclampRightPanelWidth, reclampSidebarWidth, rightPanelOpen]);
   const chatInputRef = useRef<ChatInputHandle | null>(null);
+  const liveDocDiscussionHandlerRef = useRef<((docId: string, section: LiveDocSection, selectedText: string) => void) | null>(null);
+  const openLiveDocConversationHandlerRef = useRef<((discussionEntryId: string) => void) | null>(null);
+  const [liveDocTargetState, setLiveDocTargetState] = useState<{
+    docId: string;
+    sectionId: string;
+    sectionLabel: string;
+    selectedText: string;
+    active: boolean;
+  } | null>(null);
+  const [liveDocComposerState, setLiveDocComposerState] = useState<LiveDocComposerState | null>(null);
+  const handleLiveDocDiscussionHandlerChange = useCallback((handler: ((docId: string, section: LiveDocSection, selectedText: string) => void) | null) => {
+    liveDocDiscussionHandlerRef.current = handler;
+  }, []);
+  const handleOpenLiveDocConversationHandlerChange = useCallback((handler: ((discussionEntryId: string) => void) | null) => {
+    openLiveDocConversationHandlerRef.current = handler;
+  }, []);
   const topBarRef = useRef<HTMLDivElement>(null);
   const mobileToolbarRef = useRef<HTMLDivElement>(null);
   const languageBtnRef = useRef<HTMLButtonElement>(null);
@@ -194,6 +218,7 @@ export function AppShell() {
   const [branchTree, setBranchTree] = useState<SessionTreeNode[]>([]);
   const [branchActiveLeafId, setBranchActiveLeafId] = useState<string | null>(null);
   const branchLeafChangeFnRef = useRef<((leafId: string | null) => void) | null>(null);
+  const liveDocConversations = useMemo(() => collectLiveDocThreads(branchTree), [branchTree]);
 
   const handleBranchDataChange = useCallback((tree: SessionTreeNode[], activeLeafId: string | null, onLeafChange: (leafId: string | null) => void) => {
     setBranchTree(tree);
@@ -406,9 +431,18 @@ export function AppShell() {
     return () => ro.disconnect();
   }, [activeTopPanel, isMobile]);
 
-  // Right panel — file and web tabs
+  // Right panel — file, web, and Live Doc tabs
   const [fileTabs, setFileTabs] = useState<Tab[]>([]);
   const [activeFileTabId, setActiveFileTabId] = useState<string | null>(null);
+  const {
+    docs: liveDocs,
+    defaultDocId,
+    setDefaultDocId,
+    createDoc: createLiveDoc,
+    updateSummary: updateLiveDocSummary,
+    loading: liveDocsLoading,
+    error: liveDocsError,
+  } = useLiveDocs(liveDocsFeatureEnabled ? selectedSession?.id ?? null : null);
 
   const handleFileViewerStateChange = useCallback((
     tabId: string,
@@ -862,6 +896,47 @@ export function AppShell() {
     // On mobile the file panel is full-screen; close the drawer so it shows.
     if (isMobile) setSidebarOpen(false);
   }, [isMobile]);
+
+  const handleOpenLiveDoc = useCallback((doc: LiveDocSummary | LiveDocRecord) => {
+    const tabId = `live-doc:${doc.id}`;
+    setFileTabs((tabs) => {
+      const existing = tabs.find((tab) => tab.id === tabId);
+      if (existing) return tabs.map((tab) => tab.id === tabId ? { ...tab, label: doc.title } : tab);
+      return [...tabs, { id: tabId, label: doc.title, filePath: "", kind: "live-doc", liveDocId: doc.id }];
+    });
+    setActiveFileTabId(tabId);
+    setDefaultDocId(doc.id);
+    setRightPanelOpen(true);
+    if (isMobile) setSidebarOpen(false);
+  }, [isMobile, setDefaultDocId]);
+
+  const handleCreateLiveDoc = useCallback(async (): Promise<LiveDocRecord | null> => {
+    try {
+      const doc = await createLiveDoc();
+      handleOpenLiveDoc(doc);
+      return doc;
+    } catch (error) {
+      console.error("Failed to create Live Doc:", error);
+      return null;
+    }
+  }, [createLiveDoc, handleOpenLiveDoc]);
+
+  const handleDefaultLiveDocChange = useCallback((docId: string) => {
+    const doc = liveDocs.find((candidate) => candidate.id === docId);
+    if (doc) handleOpenLiveDoc(doc);
+    else setDefaultDocId(docId);
+  }, [handleOpenLiveDoc, liveDocs, setDefaultDocId]);
+
+  const handleLiveDocChanged = useCallback((doc: LiveDocRecord) => {
+    updateLiveDocSummary(doc);
+    setFileTabs((tabs) => tabs.map((tab) => tab.liveDocId === doc.id ? { ...tab, label: doc.title } : tab));
+  }, [updateLiveDocSummary]);
+
+  const handleSelectRightTab = useCallback((tabId: string) => {
+    setActiveFileTabId(tabId);
+    const tab = fileTabs.find((candidate) => candidate.id === tabId);
+    if (tab?.kind === "live-doc" && tab.liveDocId) setDefaultDocId(tab.liveDocId);
+  }, [fileTabs, setDefaultDocId]);
 
   const handleOpenLinkedFile = useCallback((filePath: string, lineRange?: FileLineRange) => {
     handleOpenFile(filePath, getFileName(filePath), {
@@ -1973,6 +2048,15 @@ export function AppShell() {
                 )}
               </button>
               {renderSessionStatsButton(true)}
+              {liveDocsFeatureEnabled && <LiveDocsMenu
+                docs={liveDocs}
+                defaultDocId={defaultDocId}
+                disabled={!selectedSession || selectedSession.transient}
+                loading={liveDocsLoading}
+                error={liveDocsError}
+                onCreate={() => { void handleCreateLiveDoc(); }}
+                onOpen={handleOpenLiveDoc}
+              />}
               {renderSessionMenuButton()}
               {renderMainFileToggle(true)}
               {false && (
@@ -2003,6 +2087,15 @@ export function AppShell() {
           {!isMobile && renderProjectTrustWarning(false)}
           {!isMobile && (
             <div style={{ marginLeft: "auto", display: "flex", alignItems: "stretch", height: "100%" }}>
+              {liveDocsFeatureEnabled && <LiveDocsMenu
+                docs={liveDocs}
+                defaultDocId={defaultDocId}
+                disabled={!selectedSession || selectedSession.transient}
+                loading={liveDocsLoading}
+                error={liveDocsError}
+                onCreate={() => { void handleCreateLiveDoc(); }}
+                onOpen={handleOpenLiveDoc}
+              />}
               {renderSessionMenuButton()}
               {renderMainFileToggle(false)}
             </div>
@@ -2278,6 +2371,15 @@ export function AppShell() {
               onOpenFile={handleOpenLinkedFile}
               onOpenChangedFile={handleOpenChangedFile}
               onOpenUrl={handleOpenWebUrl}
+              liveDocs={liveDocsFeatureEnabled ? liveDocs : []}
+              defaultLiveDocId={liveDocsFeatureEnabled ? defaultDocId : null}
+              onDefaultLiveDocChange={liveDocsFeatureEnabled ? handleDefaultLiveDocChange : undefined}
+              onCreateLiveDoc={liveDocsFeatureEnabled ? handleCreateLiveDoc : undefined}
+              onOpenLiveDoc={liveDocsFeatureEnabled ? handleOpenLiveDoc : undefined}
+              onLiveDocDiscussionHandlerChange={liveDocsFeatureEnabled ? handleLiveDocDiscussionHandlerChange : undefined}
+              onOpenLiveDocConversationHandlerChange={liveDocsFeatureEnabled ? handleOpenLiveDocConversationHandlerChange : undefined}
+              onLiveDocTargetStateChange={liveDocsFeatureEnabled ? setLiveDocTargetState : undefined}
+              onLiveDocComposerStateChange={liveDocsFeatureEnabled ? setLiveDocComposerState : undefined}
               soundEnabled={soundEnabled}
               onSoundToggle={onSoundToggle}
               playDoneSound={playDoneSound}
@@ -2369,7 +2471,7 @@ export function AppShell() {
             <TabBar
               tabs={fileTabs}
               activeTabId={activeFileTabId ?? ""}
-              onSelectTab={setActiveFileTabId}
+              onSelectTab={handleSelectRightTab}
               onCloseTab={handleCloseFileTab}
             />
           </div>
@@ -2427,11 +2529,36 @@ export function AppShell() {
               />
             </div>
           ))}
-          {activeFileTab?.kind === "system" ? (
+          {activeFileTab?.kind === "web" ? null : activeFileTab?.kind === "system" ? (
             <div style={{ height: "100%", overflowY: "auto", padding: "14px 16px", color: "var(--text-muted)", fontSize: 12, lineHeight: 1.6, whiteSpace: "pre-wrap", fontFamily: "var(--font-mono)" }}>
               {systemPrompt ?? (systemPromptLoading ? translate("system.loading") : translate("system.load"))}
               {systemPrompt === "" && translate("system.empty")}
             </div>
+          ) : activeFileTab?.kind === "live-doc" && activeFileTab.liveDocId ? (
+            <LiveDocViewer
+              docId={activeFileTab.liveDocId}
+              sessionId={selectedSession?.id}
+              headRevisionId={liveDocs.find((doc) => doc.id === activeFileTab.liveDocId)?.headRevisionId}
+              refreshKey={liveDocs.find((doc) => doc.id === activeFileTab.liveDocId)?.updatedAt}
+              focusedSectionId={liveDocTargetState?.docId === activeFileTab.liveDocId ? liveDocTargetState.sectionId : undefined}
+              focusedSectionActive={liveDocTargetState?.docId === activeFileTab.liveDocId ? liveDocTargetState.active : false}
+              conversations={liveDocConversations.filter((conversation) => conversation.docId === activeFileTab.liveDocId)}
+              cwd={activeCwd ?? undefined}
+              onOpenFile={handleOpenLinkedFile}
+              onOpenUrl={handleOpenWebUrl}
+              onChanged={handleLiveDocChanged}
+              onStartDiscussion={(section, selectedText) => {
+                liveDocDiscussionHandlerRef.current?.(activeFileTab.liveDocId!, section, selectedText);
+              }}
+              onOpenDiscussion={(discussionEntryId) => {
+                openLiveDocConversationHandlerRef.current?.(discussionEntryId);
+              }}
+              composer={liveDocComposerState && (!liveDocComposerState.target || liveDocComposerState.target.docId === activeFileTab.liveDocId)
+                ? liveDocComposerState
+                : liveDocComposerState
+                  ? { ...liveDocComposerState, target: null }
+                  : null}
+            />
           ) : activeFileTab?.filePath ? (
             <FileViewer
               key={`${activeFileTab.id}:${activeFileTab.viewerRevision ?? 0}`}

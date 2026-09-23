@@ -185,6 +185,19 @@ function createMainWindow(serverUrl) {
 app.on("web-contents-created", (_event, contents) => {
   if (contents.getType() !== "webview") return;
 
+  // A trackpad scroll can occasionally be interpreted as a pinch or modified
+  // wheel gesture by Chromium. In an embedded webview that leaves the remote
+  // page zoomed out inside a full-size panel, which looks like the page suddenly
+  // collapsed into its top half. Keep embedded pages at their native scale;
+  // opening the page externally still provides the browser's normal zoom UI.
+  contents.setZoomFactor(1);
+  void contents.setVisualZoomLevelLimits(1, 1);
+  contents.on("zoom-changed", (event) => {
+    event.preventDefault();
+    contents.setZoomFactor(1);
+  });
+  contents.on("did-navigate", () => contents.setZoomFactor(1));
+
   // OAuth providers sometimes use a popup. Keep it in Electron so it shares
   // the guest's cookie partition instead of handing it to an unrelated browser.
   contents.setWindowOpenHandler(({ url }) => {

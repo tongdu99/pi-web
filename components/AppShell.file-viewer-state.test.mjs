@@ -19,6 +19,11 @@ test("only the active file tab mounts a FileViewer", () => {
   assert.equal(block.match(/<FileViewer/g)?.length, 1);
 });
 
+test("an active web tab does not also render the empty file placeholder", () => {
+  const block = fileContentBlock();
+  assert.match(block, /activeFileTab\?\.kind === "web" \? null : activeFileTab\?\.kind === "system"/);
+});
+
 test("the active viewer restores tab state and saves it with a revision", () => {
   const block = fileContentBlock();
   assert.match(block, /key=\{`\$\{activeFileTab\.id\}:\$\{activeFileTab\.viewerRevision \?\? 0\}`\}/);

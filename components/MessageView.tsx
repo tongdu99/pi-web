@@ -14,6 +14,8 @@ import type { WrittenFile } from "@/lib/turn-written-files";
 import { skillExpansionToCommand } from "@/lib/slash-display";
 import { findMarkdownThreadAnchor } from "@/lib/markdown-thread-anchor";
 import type { FileLineRange } from "@/lib/file-links";
+import type { LiveDocSummary } from "@/lib/live-docs";
+import { LIVE_DOC_CONTEXT_CUSTOM_TYPE } from "@/lib/live-doc-discussions";
 import type {
   AgentMessage,
   UserMessage,
@@ -206,6 +208,11 @@ interface Props {
   /** Start an in-session discussion branch from selected assistant text. */
   onDiscuss?: (entryId: string, text: string, anchorKey?: string) => void;
   discussionThreadPanels?: DiscussionThreadInlinePanel[];
+  liveDocs?: LiveDocSummary[];
+  defaultLiveDocId?: string | null;
+  onLiveDocTargetChange?: (docId: string) => void;
+  onAddToLiveDoc?: (markdown: string, docId: string | null) => void;
+  liveDocUpdateDisabled?: boolean;
   showTimestamp?: boolean;
   prevTimestamp?: number;
   sessionId?: string;
@@ -264,18 +271,19 @@ function haveSameRelevantToolResults(
   return true;
 }
 
-export const MessageView = memo(function MessageView({ message, isStreaming, processingState, toolResults, modelNames, cwd, onOpenFile, onOpenChangedFile, onOpenUrl, entryId, onFork, forking, onNavigate, prevAssistantEntryId, onEditContent, onQuote, onDiscuss, discussionThreadPanels, showTimestamp, prevTimestamp, sessionId, writtenFiles }: Props) {
+export const MessageView = memo(function MessageView({ message, isStreaming, processingState, toolResults, modelNames, cwd, onOpenFile, onOpenChangedFile, onOpenUrl, entryId, onFork, forking, onNavigate, prevAssistantEntryId, onEditContent, onQuote, onDiscuss, discussionThreadPanels, liveDocs, defaultLiveDocId, onLiveDocTargetChange, onAddToLiveDoc, liveDocUpdateDisabled, showTimestamp, prevTimestamp, sessionId, writtenFiles }: Props) {
   if (message.role === "user") {
     return <UserMessageView message={message as UserMessage} cwd={cwd} onOpenFile={onOpenFile} onOpenUrl={onOpenUrl} entryId={entryId} onFork={onFork} forking={forking} onNavigate={onNavigate} prevAssistantEntryId={prevAssistantEntryId} onEditContent={onEditContent} />;
   }
   if (message.role === "assistant") {
-    return <AssistantMessageView message={message as AssistantMessage} isStreaming={isStreaming} processingState={processingState} toolResults={toolResults} modelNames={modelNames} cwd={cwd} onOpenFile={onOpenFile} onOpenChangedFile={onOpenChangedFile} onOpenUrl={onOpenUrl} showTimestamp={showTimestamp} prevTimestamp={prevTimestamp} sessionId={sessionId} entryId={entryId} onQuote={isStreaming ? undefined : onQuote} onDiscuss={isStreaming ? undefined : onDiscuss} discussionThreadPanels={discussionThreadPanels} writtenFiles={writtenFiles} />;
+    return <AssistantMessageView message={message as AssistantMessage} isStreaming={isStreaming} processingState={processingState} toolResults={toolResults} modelNames={modelNames} cwd={cwd} onOpenFile={onOpenFile} onOpenChangedFile={onOpenChangedFile} onOpenUrl={onOpenUrl} showTimestamp={showTimestamp} prevTimestamp={prevTimestamp} sessionId={sessionId} entryId={entryId} onQuote={isStreaming ? undefined : onQuote} onDiscuss={isStreaming ? undefined : onDiscuss} discussionThreadPanels={discussionThreadPanels} liveDocs={liveDocs} defaultLiveDocId={defaultLiveDocId} onLiveDocTargetChange={onLiveDocTargetChange} onAddToLiveDoc={isStreaming ? undefined : onAddToLiveDoc} liveDocUpdateDisabled={liveDocUpdateDisabled} writtenFiles={writtenFiles} />;
   }
   if (message.role === "toolResult") {
     // Rendered inline under its toolCall — skip standalone rendering if paired
     return null;
   }
   if (message.role === "custom") {
+    if ((message as CustomMessage).customType === LIVE_DOC_CONTEXT_CUSTOM_TYPE) return null;
     if ((message as CustomMessage).customType === "compaction") {
       return <CompactionMessageView message={message as CustomMessage} />;
     }
@@ -304,6 +312,11 @@ export const MessageView = memo(function MessageView({ message, isStreaming, pro
     && prev.onQuote === next.onQuote
     && prev.onDiscuss === next.onDiscuss
     && prev.discussionThreadPanels === next.discussionThreadPanels
+    && prev.liveDocs === next.liveDocs
+    && prev.defaultLiveDocId === next.defaultLiveDocId
+    && prev.onLiveDocTargetChange === next.onLiveDocTargetChange
+    && prev.onAddToLiveDoc === next.onAddToLiveDoc
+    && prev.liveDocUpdateDisabled === next.liveDocUpdateDisabled
     && prev.showTimestamp === next.showTimestamp
     && prev.prevTimestamp === next.prevTimestamp
     && prev.sessionId === next.sessionId;
@@ -608,6 +621,11 @@ function AssistantMessageView({
   onQuote,
   onDiscuss,
   discussionThreadPanels,
+  liveDocs,
+  defaultLiveDocId,
+  onLiveDocTargetChange,
+  onAddToLiveDoc,
+  liveDocUpdateDisabled,
   writtenFiles,
 }: {
   message: AssistantMessage;
@@ -626,6 +644,11 @@ function AssistantMessageView({
   onQuote?: (text: string) => void;
   onDiscuss?: (entryId: string, text: string, anchorKey?: string) => void;
   discussionThreadPanels?: DiscussionThreadInlinePanel[];
+  liveDocs?: LiveDocSummary[];
+  defaultLiveDocId?: string | null;
+  onLiveDocTargetChange?: (docId: string) => void;
+  onAddToLiveDoc?: (markdown: string, docId: string | null) => void;
+  liveDocUpdateDisabled?: boolean;
   writtenFiles?: WrittenFile[];
 }) {
   const { t } = useI18n();
@@ -640,6 +663,8 @@ function AssistantMessageView({
   const providerError = getAssistantErrorMessage(message, { isStreaming });
   const [hovered, setHovered] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [liveDocMenuOpen, setLiveDocMenuOpen] = useState(false);
+  const liveDocMenuRef = useRef<HTMLDivElement>(null);
   const streamStartRef = useRef<number | null>(null);
   const [tps, setTps] = useState<number | null>(null);
   const blockItemsRef = useRef(blockItems);
@@ -697,6 +722,22 @@ function AssistantMessageView({
   // Keep the original Markdown for a full-response quote so formatting and
   // fenced text/XML/code blocks render identically in the quote card.
   const quoteContent = textBlocks.map((b) => b.text).join("\n\n");
+
+  useEffect(() => {
+    if (!liveDocMenuOpen) return;
+    const dismiss = (event: PointerEvent) => {
+      if (!liveDocMenuRef.current?.contains(event.target as Node)) setLiveDocMenuOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setLiveDocMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", dismiss, true);
+    document.addEventListener("keydown", escape, true);
+    return () => {
+      document.removeEventListener("pointerdown", dismiss, true);
+      document.removeEventListener("keydown", escape, true);
+    };
+  }, [liveDocMenuOpen]);
 
   const copyContent = () => {
     copyText(textContent).then(() => {
@@ -908,6 +949,79 @@ function AssistantMessageView({
             )}
              {copied ? t("i18n.copied") : t("i18n.copy")}
           </button>
+        )}
+        {textContent && !isStreaming && onAddToLiveDoc && (
+          <div
+            ref={liveDocMenuRef}
+            style={{
+              position: "relative", display: "flex", alignItems: "center",
+              opacity: hovered || liveDocMenuOpen ? 1 : 0,
+              pointerEvents: hovered || liveDocMenuOpen ? "auto" : "none",
+              transition: "opacity 0.12s",
+            }}
+          >
+            <button
+              type="button"
+              disabled={liveDocUpdateDisabled}
+              onClick={() => onAddToLiveDoc(quoteContent, defaultLiveDocId ?? liveDocs?.[0]?.id ?? null)}
+              title="Merge this response into the current Live Doc"
+              style={{
+                display: "flex", alignItems: "center", gap: 4, height: 22, padding: "3px 8px",
+                border: "none", borderRadius: liveDocs && liveDocs.length > 1 ? "5px 0 0 5px" : 5,
+                background: "none", color: "var(--text-dim)", cursor: liveDocUpdateDisabled ? "not-allowed" : "pointer",
+                opacity: liveDocUpdateDisabled ? 0.45 : 1, fontSize: 11, whiteSpace: "nowrap",
+              }}
+              onMouseEnter={(event) => { if (!liveDocUpdateDisabled) event.currentTarget.style.color = "var(--accent)"; }}
+              onMouseLeave={(event) => { event.currentTarget.style.color = "var(--text-dim)"; }}
+            >
+              <span aria-hidden="true">＋</span> Add to Live Doc
+            </button>
+            {liveDocs && liveDocs.length > 1 && (
+              <>
+                <button
+                  type="button"
+                  disabled={liveDocUpdateDisabled}
+                  aria-haspopup="menu"
+                  aria-expanded={liveDocMenuOpen}
+                  aria-label="Choose Live Doc"
+                  title="Choose another Live Doc"
+                  onClick={() => setLiveDocMenuOpen((open) => !open)}
+                  style={{
+                    width: 20, height: 22, padding: 0, border: "none", borderLeft: "1px solid var(--border)",
+                    borderRadius: "0 5px 5px 0", background: liveDocMenuOpen ? "var(--bg-hover)" : "none",
+                    color: "var(--text-dim)", cursor: liveDocUpdateDisabled ? "not-allowed" : "pointer", fontSize: 9,
+                  }}
+                >
+                  ▾
+                </button>
+                {liveDocMenuOpen && (
+                  <div role="menu" aria-label="Choose Live Doc" style={{
+                    position: "absolute", right: 0, bottom: "calc(100% + 4px)", zIndex: 20,
+                    minWidth: 180, maxWidth: 260, padding: 4, border: "1px solid var(--border)", borderRadius: 7,
+                    background: "var(--bg-panel)", boxShadow: "0 6px 18px rgba(0,0,0,0.18)",
+                  }}>
+                    {liveDocs.map((doc) => (
+                      <button
+                        key={doc.id}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={doc.id === defaultLiveDocId}
+                        onClick={() => { onLiveDocTargetChange?.(doc.id); setLiveDocMenuOpen(false); }}
+                        style={{
+                          display: "flex", alignItems: "center", gap: 7, width: "100%", padding: "6px 8px",
+                          border: "none", borderRadius: 4, background: doc.id === defaultLiveDocId ? "var(--bg-selected)" : "none",
+                          color: "var(--text-muted)", cursor: "pointer", fontSize: 11, textAlign: "left",
+                        }}
+                      >
+                        <span aria-hidden="true" style={{ width: 10, color: "var(--accent)" }}>{doc.id === defaultLiveDocId ? "●" : ""}</span>
+                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{doc.title}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
         )}
         {time && !isStreaming && (
           <span style={{ fontSize: 10, color: "var(--text-dim)", marginLeft: "auto" }}>{time}</span>

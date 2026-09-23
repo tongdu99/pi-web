@@ -118,6 +118,17 @@ type NoticeAction =
   | { type: "mark_oldest_exiting" }
   | { type: "remove"; id: string };
 
+export interface LiveDocPromptRequest {
+  docId: string;
+  expectedRevisionId: string;
+  purpose: "merge-response" | "discussion";
+  sourceMarkdown?: string;
+  sectionId?: string;
+  selectedText?: string;
+  discussionEntryId?: string;
+  contextMode?: "section" | "relevant" | "full";
+}
+
 export type AgentPhase =
   | { kind: "waiting_model" }
   | { kind: "running_command" }
@@ -1356,18 +1367,24 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
   }, []);
 
-  const handleSend = useCallback(async (message: string, images?: AttachedImage[]) => {
+  const handleSend = useCallback(async (message: string, images?: AttachedImage[], liveDocRequest?: LiveDocPromptRequest): Promise<boolean> => {
     const trimmedMessage = message.trim();
-    if (!trimmedMessage && !images?.length) return;
+    if (!trimmedMessage && !images?.length) return false;
+    // Composer submissions are recoverable drafts. Host-generated Live Doc
+    // prompts are actions, so restoring their synthetic text would overwrite
+    // or pollute the user's real draft after a rejection.
+    const restoreRejectedSubmission = () => {
+      if (!liveDocRequest) restoreSubmission(message, images, composerDraftKey);
+    };
     // Reaching the composer already required attaching, but a detach can race
     // an in-flight submission.
     if (!isNew && attachStateRef.current !== "attached" && !(await attach())) {
-      restoreSubmission(message, images, composerDraftKey);
-      return;
+      restoreRejectedSubmission();
+      return false;
     }
     if (agentRunningRef.current || bashRunningRef.current) {
-      restoreSubmission(message, images, composerDraftKey);
-      return;
+      restoreRejectedSubmission();
+      return false;
     }
     const isSlashCommandPrompt = !images?.length && trimmedMessage.startsWith("/");
 
@@ -1376,11 +1393,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       const isExcluded = trimmedMessage.startsWith("!!");
       const bashCmd = (isExcluded ? trimmedMessage.slice(2) : trimmedMessage.slice(1)).trim();
       if (!bashCmd) {
-        restoreSubmission(message, images, composerDraftKey);
-        return;
+        restoreRejectedSubmission();
+        return false;
       }
       await executeBashRef.current?.(bashCmd, isExcluded);
-      return;
+      return true;
     }
 
     const promptRunId = promptRunIdRef.current + 1;
@@ -1413,6 +1430,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
     try {
       if (isNew && newSessionCwd) {
+        if (liveDocRequest) throw new Error("Save the session before updating a Live Doc");
         const selectedModel = newSessionModel;
         const existingSid = sessionIdRef.current ?? await ensuringNewSessionRef.current;
         const sid = existingSid ?? await ensureNewSession();
@@ -1438,8 +1456,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         await ensureEventsConnected(session.id);
         promptRequestStarted = true;
         await sendAgentCommand(session.id, {
-          type: "prompt",
+          type: liveDocRequest ? "live_doc_prompt" : "prompt",
           message,
+          ...(liveDocRequest ? {
+            ...liveDocRequest,
+            requestId: typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
+          } : {}),
           ...(piImages?.length ? { images: piImages } : {}),
         });
       } else {
@@ -1448,6 +1470,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (isSlashCommandPrompt && sentSessionId) {
         void waitForPromptSettlement(sentSessionId, promptRunId);
       }
+      return true;
     } catch (e) {
       console.error("Failed to send message:", e);
       const definitivelyRejected = !promptRequestStarted || isPromptRejectedError(e);
@@ -1456,7 +1479,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       // until server state confirms the run is idle.
       if (!definitivelyRejected && sentSessionId) {
         void waitForPromptSettlement(sentSessionId, promptRunId);
-        return;
+        return true;
       }
       rpcPromptPendingRef.current = false;
       setMessages((prev) => {
@@ -1466,22 +1489,27 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           : [...prev.slice(0, optimisticIndex), ...prev.slice(optimisticIndex + 1)];
       });
       addNotice({ type: "error", message: e instanceof Error ? e.message : String(e) });
-      restoreSubmission(message, images, composerDraftKey);
+      restoreRejectedSubmission();
       optimisticUserMessageKeyRef.current = null;
       // Rejection only describes this submission. Another tab or an event we
       // missed may still have a real run active for the same session, so keep
       // its SSE connection until server state says the wrapper is idle.
       if (sentSessionId) {
         void reconcileAgentState(sentSessionId);
-        return;
+        return false;
       }
       agentRunningRef.current = false;
       closeEvents();
       setAgentRunning(false);
       setAgentPhase(null);
       dispatch({ type: "end" });
+      return false;
     }
   }, [isNew, newSessionCwd, newSessionModel, session, attach, ensureNewSession, ensureEventsConnected, promoteNewSession, waitForPromptSettlement, addNotice, cancelEventStreamGrace, closeEvents, composerDraftKey, reconcileAgentState, restoreSubmission]);
+
+  const handleLiveDocPrompt = useCallback(async (message: string, request: LiveDocPromptRequest, images?: AttachedImage[]) => {
+    return handleSend(message, images, request);
+  }, [handleSend]);
 
   const executeBash = useCallback(async (command: string, excludeFromContext: boolean) => {
     if (agentRunningRef.current || bashRunningRef.current) return;
@@ -1589,6 +1617,36 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       };
     } catch (e) {
       console.error("Failed to start discussion thread:", e);
+      addNotice({ type: "error", message: e instanceof Error ? e.message : String(e) });
+      return null;
+    }
+  }, [addNotice, attach, isNew, loadSession]);
+
+  const handleStartLiveDocThread = useCallback(async (
+    docId: string,
+    sectionId: string,
+    sectionLabel: string,
+    selectedText: string,
+    kind: "discussion" | "merge-response" = "discussion",
+  ) => {
+    if (agentRunningRef.current || bashRunningRef.current) return null;
+    if (!isNew && attachStateRef.current !== "attached" && !(await attach())) return null;
+    const sid = sessionIdRef.current;
+    if (!sid) return null;
+    try {
+      const result = await sendAgentCommand<{ cancelled?: boolean; threadEntryId?: string; hostLeafId?: string | null }>(sid, {
+        type: "start_live_doc_thread",
+        docId,
+        sectionId,
+        sectionLabel,
+        selectedText,
+        kind,
+      });
+      if (result?.cancelled || !result?.threadEntryId) return null;
+      await loadSession(sid);
+      return { threadEntryId: result.threadEntryId, hostLeafId: result.hostLeafId ?? null };
+    } catch (e) {
+      console.error("Failed to start document discussion:", e);
       addNotice({ type: "error", message: e instanceof Error ? e.message : String(e) });
       return null;
     }
@@ -2083,8 +2141,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     // Refs
     sessionIdRef, messagesEndRef, scrollContainerRef,
     // Actions
-    handleSend, handleAbort, handleFork, handleNavigate, handleStartThread, handleLeafChange, handleModelChange,
-    handleCompact, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleAbortCompaction,
+    handleSend, handleAbort, handleFork, handleNavigate, handleStartThread, handleStartLiveDocThread, handleLeafChange, handleModelChange,
+    handleCompact, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleLiveDocPrompt, handleAbortCompaction,
     handleRecallQueue,
     handleBuiltinSlashCommand,
     attach, detach,

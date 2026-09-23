@@ -11,6 +11,7 @@ const { compressChain, selectTopLevelBranches } = await jiti.import("./BranchNav
 const msg = (id, role, text) => ({ type: "message", id, parentId: null, timestamp: "t", message: { role, content: text } });
 const info = (id) => ({ type: "session_info", id, parentId: null, timestamp: "t", name: "x" });
 const model = (id) => ({ type: "model_change", id, parentId: null, timestamp: "t", provider: "test", modelId: "test" });
+const liveDocThread = (id) => ({ type: "custom", id, parentId: null, timestamp: "t", customType: "pi-web.live-doc-thread", data: { version: 1, docId: "doc", sectionId: "section", sectionLabel: "Finding 1", selectedText: "finding", hostLeafId: "a1" } });
 const node = (entry, children = []) => ({ entry, children });
 
 test("compressChain labels a chain by its first message entry", () => {
@@ -64,6 +65,12 @@ test("selectTopLevelBranches returns children of the first branching node", () =
 test("selectTopLevelBranches returns empty for a linear session", () => {
   const root = node(msg("u1", "user", "第一问"), [node(msg("a1", "assistant", "答"))]);
   assert.deepEqual(selectTopLevelBranches([root]), []);
+});
+
+test("selectTopLevelBranches exposes a document conversation before main has a sibling", () => {
+  const marker = node(liveDocThread("doc-thread"), [node(msg("u2", "user", "revise"), [node(msg("a2", "assistant", "done"))])]);
+  const root = node(msg("u1", "user", "第一问"), [node(msg("a1", "assistant", "答"), [marker])]);
+  assert.deepEqual(selectTopLevelBranches([root]).map((item) => item.entry.id), ["doc-thread"]);
 });
 
 test("selectTopLevelBranches works on preview-only server projections", () => {

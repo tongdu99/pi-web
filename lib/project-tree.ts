@@ -18,6 +18,12 @@ type ProjectableTreeNode<T> = {
   branchPreview?: BranchPreview;
 };
 
+const PI_WEB_BRANCH_MARKER_TYPES = new Set(["pi-web.thread", "pi-web.live-doc-thread"]);
+
+function isBranchMarker(entry: ProjectableEntry): boolean {
+  return entry.type === "custom" && typeof entry.customType === "string" && PI_WEB_BRANCH_MARKER_TYPES.has(entry.customType);
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -92,11 +98,11 @@ export function projectTreeForResponse<T extends ProjectableTreeNode<T>>(
     if (
       roots.has(node) ||
       node.children.length !== 1 ||
-      (node.entry.type === "custom" && node.entry.customType === "pi-web.thread") ||
-      // Keep a thread's parent too: contracting it would fold the source (and
-      // the whole main prefix) into the thread node, making the main
-      // conversation indistinguishable from thread content.
-      node.children.some((child) => child.entry.type === "custom" && child.entry.customType === "pi-web.thread")
+      isBranchMarker(node.entry) ||
+      // Keep a discussion's parent too: contracting it would fold the source
+      // (and the whole main prefix) into the marker node, making the main
+      // conversation indistinguishable from discussion content.
+      node.children.some((child) => isBranchMarker(child.entry))
     ) {
       keep.add(node);
     }

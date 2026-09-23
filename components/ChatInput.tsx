@@ -49,6 +49,8 @@ interface Props {
   onFollowUp?: (message: string, images?: AttachedImage[]) => void;
   onPromptWithStreamingBehavior?: (message: string, behavior: "steer" | "followUp", images?: AttachedImage[]) => void;
   isStreaming: boolean;
+  inactive?: boolean;
+  onActivate?: () => void;
   model?: { provider: string; modelId: string } | null;
   isAutoModelSelection?: boolean;
   modelNames?: Record<string, string>;
@@ -82,14 +84,16 @@ interface Props {
   onAudioUnlock?: () => void;
   /** Session token, cost, and context status supplied by the application shell. */
   sessionStatusControl?: React.ReactNode;
-  conversationTarget?: { label: string; active: boolean } | null;
+  conversationTarget?: { label: string; active: boolean; tone?: "thread" | "live-doc" } | null;
+  liveDocContextMode?: "section" | "relevant" | "full";
+  onLiveDocContextModeChange?: (mode: "section" | "relevant" | "full") => void;
   onConversationTargetClear?: () => void;
   draftKey?: string;
   /** Session working directory — enables the @ file autocomplete menu */
   cwd?: string | null;
 }
 
-function WorkspaceStatus({ cwd, isMobile }: { cwd?: string | null; isMobile: boolean }) {
+function WorkspaceStatus({ cwd, isMobile, refreshKey }: { cwd?: string | null; isMobile: boolean; refreshKey: boolean }) {
   const [branch, setBranch] = useState<string | null>(null);
 
   useEffect(() => {
@@ -110,7 +114,7 @@ function WorkspaceStatus({ cwd, isMobile }: { cwd?: string | null; isMobile: boo
       });
 
     return () => controller.abort();
-  }, [cwd]);
+  }, [cwd, refreshKey]);
 
   if (!cwd) return null;
   const label = branch ? `${cwd} · ${branch}` : cwd;
@@ -464,14 +468,14 @@ export function ModelScopeWarningBanner({ warnings }: { warnings?: string[] }) {
 }
 
 export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
-  onSend, onAbort, onSteer, onFollowUp, isStreaming, model, isAutoModelSelection, modelNames, modelList, modelError, modelScopeWarnings, onModelChange, modelSwitching,
+  onSend, onAbort, onSteer, onFollowUp, isStreaming, inactive = false, onActivate, model, isAutoModelSelection, modelNames, modelList, modelError, modelScopeWarnings, onModelChange, modelSwitching,
   onCompact, onAbortCompaction, isCompacting, compactError, compactResult, toolPreset, onToolPresetChange,
   thinkingLevel, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap,
   retryInfo, queuedMessages, inputHistory = [], onRecallQueue,
   slashCommands, slashCommandsLoading, onLoadSlashCommands,
   onBuiltinCommand,
   soundEnabled, onSoundToggle, onAudioUnlock, sessionStatusControl,
-  conversationTarget, onConversationTargetClear,
+  conversationTarget, liveDocContextMode, onLiveDocContextModeChange, onConversationTargetClear,
   onPromptWithStreamingBehavior,
   draftKey,
   cwd,
@@ -1485,17 +1489,29 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     if (!isMobile) setControlsMenuOpen(false);
   }, [isMobile]);
 
-
+  const wasInactiveRef = useRef(inactive);
+  useEffect(() => {
+    if (wasInactiveRef.current && !inactive) requestAnimationFrame(() => textareaRef.current?.focus());
+    wasInactiveRef.current = inactive;
+  }, [inactive]);
 
   return (
     <div
+      aria-disabled={inactive}
       style={{
         flexShrink: 0,
+        position: "relative",
         background: "transparent",
         padding: "0 16px 8px",
         paddingRight: isMobile ? 16 : 52, // desktop: 16px base + 36px for ChatMinimap alignment
+        opacity: inactive ? 0.55 : 1,
+        transition: "opacity 0.15s",
       }}
     >
+      {inactive && (
+        <button type="button" aria-label="Activate session composer" title="Click to use the session composer" onClick={onActivate}
+          style={{ position: "absolute", inset: 0, zIndex: 200, width: "100%", border: 0, background: "transparent", cursor: "text" }} />
+      )}
       {/* Hidden file input */}
       <input
         ref={fileInputRef}
@@ -1628,28 +1644,55 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             {compactError}
           </div>
         )}
-        {conversationTarget && (
+        {conversationTarget && (() => {
+          const targetColor = conversationTarget.tone === "live-doc" ? "#a855f7" : "var(--accent)";
+          return (
           <div style={{
             display: "flex", alignItems: "center", gap: 8, marginBottom: 7,
-            padding: "6px 8px", border: "1px solid color-mix(in srgb, var(--accent) 35%, var(--border))",
-            borderRadius: 7, background: "color-mix(in srgb, var(--accent) 7%, var(--bg-panel))",
+            padding: "6px 8px", border: `1px solid color-mix(in srgb, ${targetColor} 35%, var(--border))`,
+            borderRadius: 7, background: `color-mix(in srgb, ${targetColor} 7%, var(--bg-panel))`,
             color: "var(--text-muted)", fontSize: 11,
           }}>
-            <span aria-hidden="true" style={{ color: "var(--accent)" }}>↳</span>
+            <span aria-hidden="true" style={{ color: targetColor }}>↳</span>
             <span style={{ minWidth: 0, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {t(conversationTarget.active ? "chat.replyingInThread" : "chat.startingThread", { title: conversationTarget.label })}
+              {t(conversationTarget.tone === "live-doc"
+                ? "chat.liveDocTarget"
+                : conversationTarget.active ? "chat.replyingInThread" : "chat.startingThread", { title: conversationTarget.label })}
             </span>
+            {conversationTarget.tone === "live-doc" && liveDocContextMode && onLiveDocContextModeChange && (
+              <select
+                aria-label={t("chat.liveDocContext")}
+                title={t("chat.liveDocContextTitle")}
+                value={liveDocContextMode}
+                disabled={isStreaming}
+                onChange={(event) => onLiveDocContextModeChange(event.target.value as "section" | "relevant" | "full")}
+                style={{
+                  minWidth: 0,
+                  padding: "2px 4px",
+                  border: "1px solid var(--border)",
+                  borderRadius: 4,
+                  background: "var(--bg)",
+                  color: "var(--text-muted)",
+                  fontSize: 11,
+                }}
+              >
+                <option value="section">{t("chat.liveDocContextSection")}</option>
+                <option value="relevant">{t("chat.liveDocContextRelevant")}</option>
+                <option value="full">{t("chat.liveDocContextFull")}</option>
+              </select>
+            )}
             {onConversationTargetClear && !isStreaming && (
               <button
                 type="button"
                 onClick={onConversationTargetClear}
-                style={{ padding: "2px 6px", border: 0, borderRadius: 4, background: "transparent", color: conversationTarget.active ? "var(--accent)" : "var(--text-dim)", cursor: "pointer", fontSize: 11 }}
+                style={{ padding: "2px 6px", border: 0, borderRadius: 4, background: "transparent", color: conversationTarget.active ? targetColor : "var(--text-dim)", cursor: "pointer", fontSize: 11 }}
               >
                 {t(conversationTarget.active ? "chat.returnToMain" : "chat.replyInMain")}
               </button>
             )}
           </div>
-        )}
+          );
+        })()}
 
         {/* Image previews */}
         {attachedImages.length > 0 && (
@@ -1686,7 +1729,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         {quotes.length > 0 && (
           <div aria-label={t("chat.quotedSections")} style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 7 }}>
             {quotes.map((quote, index) => (
-              <div key={quote.id} style={{ display: "flex", gap: 7, padding: "7px 8px 7px 10px", border: "1px solid var(--border)", borderLeft: "3px solid var(--accent)", borderRadius: 7, background: "var(--bg-panel)", maxHeight: 150, overflow: "auto" }}>
+              <div key={quote.id} style={{ display: "flex", gap: 7, padding: "7px 8px 7px 10px", border: "1px solid var(--border)", borderLeft: `3px solid ${conversationTarget?.tone === "live-doc" ? "#a855f7" : "var(--accent)"}`, borderRadius: 7, background: "var(--bg-panel)", maxHeight: 150, overflow: "auto" }}>
                 <div style={{ minWidth: 0, flex: 1, fontSize: 12, lineHeight: 1.45 }}>
                   <MarkdownBody cwd={cwd ?? undefined}>{quote.markdown}</MarkdownBody>
                 </div>
@@ -2801,7 +2844,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             </div>
           </div>
 
-          <WorkspaceStatus cwd={cwd} isMobile={isMobile} />
+          <WorkspaceStatus cwd={cwd} isMobile={isMobile} refreshKey={isStreaming} />
 
           {/* Keep usage and cost information at the far right of the composer bar. */}
           {!isMobile && sessionStatusControl && (
