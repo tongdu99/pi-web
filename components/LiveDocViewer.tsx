@@ -79,6 +79,25 @@ export function LiveDocViewer({ docId, sessionId, headRevisionId, refreshKey, fo
     });
   }, [doc?.headRevisionId, focusedSectionId]);
 
+  useEffect(() => {
+    if (!previewRevisionId) return;
+    const frame = requestAnimationFrame(() => {
+      const content = contentRef.current;
+      if (!content) return;
+      const changedSections = Array.from(
+        content.querySelectorAll<HTMLElement>("[data-live-doc-revision-change]"),
+      );
+      if (changedSections.length === 0) return;
+      const viewport = content.getBoundingClientRect();
+      const sectionOutsideViewport = changedSections.find((section) => {
+        const bounds = section.getBoundingClientRect();
+        return bounds.top < viewport.top || bounds.bottom > viewport.bottom;
+      });
+      (sectionOutsideViewport ?? changedSections[0]).scrollIntoView({ block: "nearest", behavior: "smooth" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [previewRevisionId]);
+
   const saveTitle = useCallback(async () => {
     if (!doc || !title.trim() || title.trim() === doc.title) {
       if (doc) setTitle(doc.title);
@@ -190,12 +209,23 @@ export function LiveDocViewer({ docId, sessionId, headRevisionId, refreshKey, fo
         const revision = revisionById.get(revisionId);
         if (!revision) return null;
         const current = revisionId === doc.headRevisionId;
+        const previewed = revisionId === previewRevisionId;
         return (
           <div key={revision.id}
+            data-live-doc-preview-revision={previewed || undefined}
             onMouseEnter={() => setPreviewRevisionId(revision.id)}
             onMouseLeave={() => setPreviewRevisionId((value) => value === revision.id ? null : value)}
-            style={{ padding: "7px 0", borderBottom: "1px solid var(--border)", fontSize: 11 }}>
-            <div style={{ color: current ? "var(--accent)" : "var(--text-muted)" }}>{current ? "Current" : `${label === "History" ? "Revision" : "Archived"} ${ids.length - index}`}</div>
+            style={{
+              margin: "0 -6px",
+              padding: "7px 6px",
+              borderBottom: "1px solid var(--border)",
+              borderRadius: 4,
+              background: previewed ? "color-mix(in srgb, var(--accent) 14%, var(--bg-panel))" : "transparent",
+              boxShadow: previewed ? "inset 2px 0 0 var(--accent)" : "none",
+              fontSize: 11,
+              transition: "background 0.12s, box-shadow 0.12s",
+            }}>
+            <div style={{ color: current || previewed ? "var(--accent)" : "var(--text-muted)" }}>{current ? "Current" : `${label === "History" ? "Revision" : "Archived"} ${ids.length - index}`}</div>
             <div style={{ color: "var(--text-dim)", margin: "2px 0 5px" }}>{revision.summary ?? new Date(revision.createdAt).toLocaleString()}</div>
             <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
               {!current && <button type="button" disabled={Boolean(restoring)} onClick={() => { void restore(revision.id); }} style={smallButtonStyle}>{restoring === revision.id ? "Restoring…" : "Restore"}</button>}

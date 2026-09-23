@@ -2529,7 +2529,7 @@ export function AppShell() {
               />
             </div>
           ))}
-          {activeFileTab?.kind === "system" ? (
+          {activeFileTab?.kind === "web" ? null : activeFileTab?.kind === "system" ? (
             <div style={{ height: "100%", overflowY: "auto", padding: "14px 16px", color: "var(--text-muted)", fontSize: 12, lineHeight: 1.6, whiteSpace: "pre-wrap", fontFamily: "var(--font-mono)" }}>
               {systemPrompt ?? (systemPromptLoading ? translate("system.loading") : translate("system.load"))}
               {systemPrompt === "" && translate("system.empty")}

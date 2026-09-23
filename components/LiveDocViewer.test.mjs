@@ -24,9 +24,15 @@ test("history separates archived snapshots and previews a revision on hover", as
   assert.match(source, /revisionGroup\("History", mainRevisionIds\)/);
   assert.match(source, /revisionGroup\("Archived", archivedRevisionIds\)/);
   assert.match(source, /onMouseEnter=\{\(\) => setPreviewRevisionId\(revision\.id\)\}/);
+  assert.match(source, /const previewed = revisionId === previewRevisionId/);
+  assert.match(source, /data-live-doc-preview-revision=\{previewed \|\| undefined\}/);
+  assert.match(source, /background: previewed \?/);
   assert.match(source, /findAdjacentNewerRevision\(doc\.revisions, previewRevisionIds, previewRevision\.id\) \?\? head/);
   assert.match(source, /buildLiveDocRevisionPreview\(previewComparisonRevision, previewRevision\)/);
   assert.match(source, /const previewChangedIds = preview\.changedSectionIds/);
+  assert.match(source, /querySelectorAll<HTMLElement>\("\[data-live-doc-revision-change\]"\)/);
+  assert.match(source, /sectionOutsideViewport \?\? changedSections\[0\]/);
+  assert.match(source, /scrollIntoView\(\{ block: "nearest", behavior: "smooth" \}\)/);
 });
 
 test("Live Doc links use the same right-panel file and web handlers as conversation links", async () => {

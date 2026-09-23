@@ -93,7 +93,7 @@ interface Props {
   cwd?: string | null;
 }
 
-function WorkspaceStatus({ cwd, isMobile }: { cwd?: string | null; isMobile: boolean }) {
+function WorkspaceStatus({ cwd, isMobile, refreshKey }: { cwd?: string | null; isMobile: boolean; refreshKey: boolean }) {
   const [branch, setBranch] = useState<string | null>(null);
 
   useEffect(() => {
@@ -114,7 +114,7 @@ function WorkspaceStatus({ cwd, isMobile }: { cwd?: string | null; isMobile: boo
       });
 
     return () => controller.abort();
-  }, [cwd]);
+  }, [cwd, refreshKey]);
 
   if (!cwd) return null;
   const label = branch ? `${cwd} · ${branch}` : cwd;
@@ -2844,7 +2844,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             </div>
           </div>
 
-          <WorkspaceStatus cwd={cwd} isMobile={isMobile} />
+          <WorkspaceStatus cwd={cwd} isMobile={isMobile} refreshKey={isStreaming} />
 
           {/* Keep usage and cost information at the far right of the composer bar. */}
           {!isMobile && sessionStatusControl && (
