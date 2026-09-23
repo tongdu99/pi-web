@@ -39,6 +39,7 @@ import { DiscussionThreadPanel } from "./DiscussionThreadPanel";
 import { discussionDelta, documentOutcome, LiveDocDiscussionPanel } from "./LiveDocDiscussionPanel";
 import type { LiveDocRecord, LiveDocSection, LiveDocSummary } from "@/lib/live-docs";
 import { LIVE_DOC_CONTEXT_CUSTOM_TYPE, collectLiveDocThreads, findActiveLiveDocThread, groupLiveDocThreadsByDoc, type LiveDocThreadDescriptor } from "@/lib/live-doc-discussions";
+import type { SessionError } from "@/lib/session-errors";
 import { liveDocConversationLabel, liveDocSectionPreview } from "@/lib/live-doc-target";
 import type { LiveDocComposerResult, LiveDocComposerState } from "@/lib/live-doc-composer";
 
@@ -428,7 +429,7 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
     retryInfo, contextUsage, forkingEntryId,
     isCompacting, compactError, compactResult, displayModel: displayModelValue, modelSwitching, sessionStats,
     slashCommands, slashCommandsLoading, queuedMessages,
-    notices, extensionDialog, extensionCustomUi, extensionStatuses, extensionWidgets, respondToExtensionUi, sendExtensionCustomInput,
+    notices, sessionErrors, clearSessionErrors, extensionDialog, extensionCustomUi, extensionStatuses, extensionWidgets, respondToExtensionUi, sendExtensionCustomInput,
     isAutoModelSelection,
     agentPhase,
     isNew,
@@ -1230,6 +1231,10 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
       </div>
 
       {isEmptyNew ? (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div style={{ width: "100%", maxWidth: CHAT_CONTENT_MAX_WIDTH, boxSizing: "border-box", margin: "0 auto", padding: `0 ${CHAT_COLUMN_PADDING}px` }}>
+            <SessionErrorPanel errors={sessionErrors} cwd={newSessionCwd} onClear={clearSessionErrors} />
+          </div>
         <div className="flex flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-8">
           <div className="w-full" style={{ maxWidth: CHAT_CONTENT_MAX_WIDTH, margin: "0 auto" }}>
             <div
@@ -1262,9 +1267,14 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
             <ExtensionStatusBar statuses={extensionStatuses} widgets={extensionWidgets} />
           </div>
         </div>
+        </div>
       ) : (
       <>
       <div className="relative flex min-w-0 flex-1 overflow-hidden">
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div style={{ width: "100%", maxWidth: CHAT_CONTENT_MAX_WIDTH, boxSizing: "border-box", margin: "0 auto", padding: `0 ${CHAT_COLUMN_PADDING}px` }}>
+            <SessionErrorPanel errors={sessionErrors} cwd={session?.cwd} onClear={clearSessionErrors} />
+          </div>
         <div ref={scrollContainerRef} className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto pt-4 [scrollbar-width:none]">
           <div style={{ minWidth: 0, padding: `0 ${CHAT_COLUMN_PADDING}px` }}>
             <div style={{ width: "100%", minWidth: 0, maxWidth: CHAT_CONTENT_MAX_WIDTH, margin: "0 auto" }}>
@@ -1687,6 +1697,7 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
             </div>
           </div>
         </div>
+        </div>
         {isMobile ? null : (
           <ChatMinimap
             messages={messages}
@@ -1705,6 +1716,57 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
       </>
       )}
     </div>
+  );
+}
+
+function SessionErrorPanel({ errors, cwd, onClear }: { errors: SessionError[]; cwd?: string | null; onClear: () => void }) {
+  const [expanded, setExpanded] = useState(true);
+  useEffect(() => setExpanded(true), [errors.at(-1)?.id]);
+  if (errors.length === 0) return null;
+  return (
+    <section role="alert" aria-label="Session errors" style={{
+      flexShrink: 0, margin: "8px 0", padding: "10px 14px", borderRadius: 10,
+      border: "1px solid #ef4444", background: "var(--bg-panel)", color: "var(--text)",
+      maxHeight: "min(40vh, 340px)", overflowY: "auto", fontSize: 13,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <button type="button" onClick={() => setExpanded((open) => !open)} aria-expanded={expanded}
+          style={{ color: "#ef4444", fontWeight: 600, textAlign: "left" }}>
+          {expanded ? "▾" : "▸"} Session errors ({errors.length})
+        </button>
+        <button type="button" onClick={onClear} style={{ marginLeft: "auto", color: "var(--text-muted)" }}>
+          Clear history
+        </button>
+      </div>
+      {expanded && (
+        <div style={{ marginTop: 8 }}>
+          {cwd && <div style={{ color: "var(--text-muted)", overflowWrap: "anywhere" }}>Working directory: {cwd}</div>}
+          {errors.slice().reverse().map((error) => (
+            <div key={error.id} style={{ borderTop: "1px solid var(--border)", marginTop: 8, paddingTop: 8 }}>
+              <time style={{ color: "var(--text-muted)", fontSize: 11 }} dateTime={new Date(error.timestamp).toISOString()}>
+                {new Date(error.timestamp).toLocaleString()}
+              </time>
+              {error.request && (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                  <code title={error.request} style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text-muted)" }}>
+                    Request: {error.request.replace(/\s+/g, " ")}
+                  </code>
+                  <button type="button" title="Copy original request" aria-label="Copy original request"
+                    onClick={() => { if (error.request) void navigator.clipboard?.writeText(error.request).catch(() => {}); }}
+                    style={{ flexShrink: 0, color: "var(--accent)", fontSize: 11 }}>Copy</button>
+                </div>
+              )}
+              <div style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", userSelect: "text" }}>{error.message}</div>
+              {error.message.startsWith("gh pr view failed:") && (
+                <div style={{ marginTop: 6, color: "var(--text-muted)" }}>
+                  PR numbers are looked up in this session&apos;s repository. Open a session in the PR&apos;s repository and retry.
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 

@@ -20,6 +20,7 @@ import { getToolNamesForPreset, type ToolEntry, type ToolPreset } from "@/lib/to
 import type { SessionStatsInfo } from "@/lib/pi-types";
 import { userMessageKey } from "@/lib/prompt-recovery";
 import { AgentEventConnection } from "@/lib/agent-event-connection";
+import { appendSessionError, readSessionErrors, saveSessionErrors, type SessionError } from "@/lib/session-errors";
 import { getToolExecutionProgress } from "@/lib/tool-execution-progress";
 import {
   CHAT_SCROLL_REATTACH_TOLERANCE,
@@ -342,6 +343,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [slashCommands, setSlashCommands] = useState<SlashCommandInfo[]>([]);
   const [slashCommandsLoading, setSlashCommandsLoading] = useState(false);
   const [noticeState, dispatchNotice] = useReducer(noticeReducer, { visible: [], pending: [] });
+  const [sessionErrors, setSessionErrors] = useState<SessionError[]>([]);
   const [sessionStatsOverride, setSessionStatsOverride] = useState<SessionStatsInfo | null>(null);
   const [extensionDialog, setExtensionDialog] = useState<ExtensionUiDialogRequest | null>(null);
   const [extensionCustomUi, setExtensionCustomUi] = useState<ExtensionUiCustomRequest | null>(null);
@@ -359,6 +361,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const agentRunningRef = useRef(false);
   const sdkAgentActiveRef = useRef(false);
   const rpcPromptPendingRef = useRef(false);
+  const pendingSlashRequestRef = useRef<{ runId: number; text: string } | null>(null);
   const notifiedPromptRunIdRef = useRef(-1);
   const bashRunningRef = useRef(false);
   const bashRecoveryIdRef = useRef(0);
@@ -781,17 +784,32 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
   }, []);
 
-  const addNotice = useCallback((notice: { id?: string; message: string; type?: NoticeType }) => {
+  useEffect(() => {
+    setSessionErrors(readSessionErrors(session?.id ?? sessionIdRef.current));
+  }, [session?.id]);
+
+  const clearSessionErrors = useCallback(() => {
+    saveSessionErrors(sessionIdRef.current, []);
+    setSessionErrors([]);
+  }, []);
+
+  const addNotice = useCallback((notice: { id?: string; message: string; type?: NoticeType; request?: string }) => {
     const message = notice.message.trim();
     if (!message) return;
-    dispatchNotice({
-      type: "add",
-      notice: {
-        id: notice.id ?? createNoticeId(),
-        message,
-        type: notice.type ?? "info",
-      },
-    });
+    const id = notice.id ?? createNoticeId();
+    if (notice.type === "error") {
+      const sid = sessionIdRef.current;
+      const error = { id, message, timestamp: Date.now(), ...(notice.request ? { request: notice.request } : {}) };
+      if (sid) {
+        const next = appendSessionError(readSessionErrors(sid), error);
+        saveSessionErrors(sid, next);
+        setSessionErrors(next);
+      } else {
+        setSessionErrors((previous) => appendSessionError(previous, error));
+      }
+      return;
+    }
+    dispatchNotice({ type: "add", notice: { id, message, type: notice.type ?? "info" } });
   }, []);
 
   const handleExtensionUiRequest = useCallback((request: ExtensionUiRequest) => {
@@ -809,6 +827,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           id: request.id,
           message: request.message,
           type: request.notifyType ?? "info",
+          request: request.notifyType === "error" ? pendingSlashRequestRef.current?.text : undefined,
         });
         break;
       }
@@ -934,6 +953,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       const agentWasActive = sdkAgentActiveRef.current;
       rpcPromptPendingRef.current = false;
       sdkAgentActiveRef.current = false;
+      if (pendingSlashRequestRef.current?.runId === runId) pendingSlashRequestRef.current = null;
       optimisticUserMessageKeyRef.current = null;
       const wasRunning = settleUiStage();
       if (promptWasPending) {
@@ -1143,6 +1163,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           optimisticUserMessageKeyRef.current = null;
           const firstNotification = notifyPromptStage(runId);
           if (!promptWasPending && !firstNotification) break;
+          if (pendingSlashRequestRef.current?.runId === runId) pendingSlashRequestRef.current = null;
 
           const sid = sessionIdRef.current;
           if (sid) void loadSession(sid);
@@ -1156,12 +1177,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         }
         break;
       case "prompt_error":
-        addNotice({ type: "error", message: (event.errorMessage as string | undefined) ?? "Command failed" });
+        addNotice({ type: "error", message: (event.errorMessage as string | undefined) ?? "Command failed", request: pendingSlashRequestRef.current?.text });
         break;
       case "extension_error":
         addNotice({
           type: "error",
           message: (event.error as string | undefined) ?? "Extension command failed",
+          request: pendingSlashRequestRef.current?.text,
         });
         break;
       case "message_start":
@@ -1415,6 +1437,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     setMessages((prev) => [...prev, userMsg]);
     optimisticUserMessageKeyRef.current = userMessageKey(userMsg);
     promptRunIdRef.current = promptRunId;
+    pendingSlashRequestRef.current = isSlashCommandPrompt ? { runId: promptRunId, text: trimmedMessage } : null;
     agentRunningRef.current = true;
     setAgentRunning(true);
     setAgentPhase(isSlashCommandPrompt ? { kind: "running_command" } : { kind: "waiting_model" });
@@ -1488,7 +1511,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           ? prev
           : [...prev.slice(0, optimisticIndex), ...prev.slice(optimisticIndex + 1)];
       });
-      addNotice({ type: "error", message: e instanceof Error ? e.message : String(e) });
+      addNotice({ type: "error", message: e instanceof Error ? e.message : String(e), request: isSlashCommandPrompt ? trimmedMessage : undefined });
+      if (pendingSlashRequestRef.current?.runId === promptRunId) pendingSlashRequestRef.current = null;
       restoreRejectedSubmission();
       optimisticUserMessageKeyRef.current = null;
       // Rejection only describes this submission. Another tab or an event we
@@ -2133,7 +2157,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     retryInfo, contextUsage, systemPrompt, forkingEntryId,
     isCompacting, compactError, compactResult, currentModel, displayModel, modelSwitching, sessionStats,
     slashCommands, slashCommandsLoading, queuedMessages,
-    notices: noticeState.visible, extensionDialog, extensionCustomUi, extensionStatuses, extensionWidgets, respondToExtensionUi, sendExtensionCustomInput,
+    notices: noticeState.visible, sessionErrors, clearSessionErrors, extensionDialog, extensionCustomUi, extensionStatuses, extensionWidgets, respondToExtensionUi, sendExtensionCustomInput,
     isAutoModelSelection: isNew && newSessionModel === null,
     agentPhase,
     isNew,

@@ -7,6 +7,14 @@ const chatWindowSource = await readFile(new URL("../components/ChatWindow.tsx", 
 const chatInputSource = await readFile(new URL("../components/ChatInput.tsx", import.meta.url), "utf8");
 const appShellSource = await readFile(new URL("../components/AppShell.tsx", import.meta.url), "utf8");
 
+test("captures the original slash request with extension failures, then clears it when the run settles", () => {
+  assert.match(source, /pendingSlashRequestRef\.current = isSlashCommandPrompt \? \{ runId: promptRunId, text: trimmedMessage \} : null/);
+  assert.match(source, /request: request\.notifyType === "error" \? pendingSlashRequestRef\.current\?\.text : undefined/);
+  assert.match(source, /case "extension_error":[\s\S]*?request: pendingSlashRequestRef\.current\?\.text/);
+  assert.match(source, /case "prompt_done":[\s\S]*?pendingSlashRequestRef\.current\?\.runId === runId/);
+  assert.match(source, /const finishPromptWithoutStream[\s\S]*?pendingSlashRequestRef\.current\?\.runId === runId/);
+});
+
 test("keeps the session event stream open through the idle grace window", () => {
   const finishSource = source.slice(
     source.indexOf("const finishPromptWithoutStream"),
