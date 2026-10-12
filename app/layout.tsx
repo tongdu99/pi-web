@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Noto_Sans_Mono } from "next/font/google";
 import { PwaRegistration } from "@/components/PwaRegistration";
+import { getWindowTitle } from "@/lib/window-title";
 import "katex/dist/katex.min.css";
 import "./globals.css";
 
@@ -11,18 +12,24 @@ const notoSansMono = Noto_Sans_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Pi Web",
+  title: getWindowTitle(process.cwd()),
   description: "Pi Web interface for the pi coding agent",
   applicationName: "Pi Web",
   manifest: "/manifest.webmanifest",
   icons: {
     icon: [
       {
-        url: "/icons/icon-192.png",
-        sizes: "192x192",
+        url: "/icons/pi-web.svg",
+        sizes: "any",
+        type: "image/svg+xml",
+      },
+      {
+        url: "/icons/pi-web-32.png",
+        sizes: "32x32",
         type: "image/png",
       },
     ],
+    shortcut: "/icons/pi-web-32.png",
     apple: [
       {
         url: "/icons/apple-touch-icon.png",

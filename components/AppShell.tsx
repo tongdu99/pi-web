@@ -25,6 +25,7 @@ import { useAudio } from "@/hooks/useAudio";
 import type { AttachState } from "@/hooks/useAgentSession";
 import { copyText } from "@/lib/clipboard";
 import { getFileName } from "@/lib/file-paths";
+import { getWindowTitle } from "@/lib/window-title";
 import type { FileLineRange } from "@/lib/file-links";
 import { getWebUrlLabel, normalizeWebUrl } from "@/lib/web-url";
 import { buildAtMentionText, buildFileAtMentionsText, buildFileLineMentionText } from "@/lib/file-fuzzy";
@@ -45,10 +46,8 @@ import {
   getRightPanelMaxWidth,
   getSidebarMaxWidth,
   RIGHT_PANEL_FALLBACK_WIDTH,
-  RIGHT_PANEL_MAX_WIDTH,
   RIGHT_PANEL_MIN_WIDTH,
   SIDEBAR_DEFAULT_WIDTH,
-  SIDEBAR_MAX_WIDTH,
   SIDEBAR_MIN_WIDTH,
 } from "@/lib/panel-layout";
 import type { BlockingExtensionUiRequest, SessionInfo, SessionTreeNode } from "@/lib/types";
@@ -72,7 +71,7 @@ type AutoNameStatus =
 const TOP_BAR_ICON_BUTTON_SIZE = 36;
 const LANGUAGE_MENU_WIDTH = 176;
 
-export function AppShell() {
+export function AppShell({ serverCwd }: { serverCwd: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [initialNavigation] = useState(() => getInitialNavigation(searchParams));
@@ -137,7 +136,7 @@ export function AppShell() {
   );
   const getResponsiveSidebarMaxWidth = useCallback(
     () => typeof window === "undefined"
-      ? SIDEBAR_MAX_WIDTH
+      ? Number.POSITIVE_INFINITY
       : getSidebarMaxWidth({
         viewportWidth: window.innerWidth,
         rightPanelOpen,
@@ -147,7 +146,7 @@ export function AppShell() {
   );
   const getResponsiveRightPanelMaxWidth = useCallback(
     () => typeof window === "undefined"
-      ? RIGHT_PANEL_MAX_WIDTH
+      ? Number.POSITIVE_INFINITY
       : getRightPanelMaxWidth({
         viewportWidth: window.innerWidth,
         sidebarOpen,
@@ -161,7 +160,6 @@ export function AppShell() {
     defaultWidth: SIDEBAR_DEFAULT_WIDTH,
     getMaxWidth: getResponsiveSidebarMaxWidth,
     growthDirection: "right",
-    maxWidth: SIDEBAR_MAX_WIDTH,
     minWidth: SIDEBAR_MIN_WIDTH,
     storageKey: "pi-sidebar-width",
     widthRef: sidebarWidthRef,
@@ -173,7 +171,6 @@ export function AppShell() {
     getDefaultWidth: getResponsiveRightPanelWidth,
     getMaxWidth: getResponsiveRightPanelMaxWidth,
     growthDirection: "left",
-    maxWidth: RIGHT_PANEL_MAX_WIDTH,
     minWidth: RIGHT_PANEL_MIN_WIDTH,
     storageKey: "pi-right-panel-width",
     widthRef: rightPanelWidthRef,
@@ -1103,8 +1100,11 @@ export function AppShell() {
   // The system prompt opens as a file tab, so the toolbar button reflects that
   // tab rather than a top-bar panel.
   const systemTabActive = rightPanelOpen && activeFileTab?.kind === "system";
-  const activeCwdName = activeCwd ? getFileName(activeCwd) || activeCwd : null;
-  const windowTitle = activeCwdName ? `${activeCwdName} - Pi Web` : "Pi Web";
+  // Session cwd is authoritative (the sidebar may point at another worktree).
+  // Preserve path context during loading, fresh composers, and empty workspaces.
+  const windowTitle = getWindowTitle(
+    selectedSession?.cwd || newSessionCwd || activeCwd || initialNavigation.requestedCwd || serverCwd,
+  );
 
   useEffect(() => {
     const syncWindowTitle = () => {

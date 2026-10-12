@@ -41,6 +41,14 @@ test("includes project activity counts in accessible labels", () => {
   );
 });
 
+test("session titles use available width rather than a character cutoff", () => {
+  assert.match(sessionItemSource, /const title = session\.name \|\| displayFirstMessage \|\| session\.id\.slice\(0, 12\)/);
+  assert.doesNotMatch(sessionItemSource, /displayFirstMessage\.slice\(/);
+  assert.match(sessionItemSource, /setRenameValue\(title\)/);
+  assert.match(sessionItemSource, /textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0/);
+  assert.match(sessionItemSource, /title=\{title\}/);
+});
+
 test("does not persist an unchanged fallback title ending in whitespace", () => {
   assert.match(
     sessionItemSource,

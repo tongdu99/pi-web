@@ -2049,14 +2049,15 @@ function SessionItem({
   // back to the compact /skill:name args command the user typed before using
   // it as the auto-name fallback, mirroring MessageView's rendering.
   const displayFirstMessage = skillExpansionToCommand(session.firstMessage) ?? session.firstMessage;
-  const title = session.name || displayFirstMessage.slice(0, 50) || session.id.slice(0, 12);
+  // Let CSS ellipsis follow the available sidebar width, not a character cap.
+  const title = session.name || displayFirstMessage || session.id.slice(0, 12);
 
   const startRename = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     if (session.transient) return;
-    setRenameValue(session.name || displayFirstMessage.slice(0, 50) || session.id.slice(0, 12));
+    setRenameValue(title);
     setRenaming(true);
-  }, [session.name, session.transient, displayFirstMessage, session.id]);
+  }, [session.transient, title]);
 
   const commitRename = useCallback(async () => {
     const name = renameValue.trim();

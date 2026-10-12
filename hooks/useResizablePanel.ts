@@ -31,7 +31,7 @@ interface UseResizablePanelOptions {
    * width (a vertical separator); "up"/"down" resize height (a horizontal one).
    */
   growthDirection: "left" | "right" | "up" | "down";
-  maxWidth: number;
+  maxWidth?: number;
   minWidth: number;
   storageKey: string;
   widthRef: MutableRefObject<number>;
@@ -69,7 +69,7 @@ export function useResizablePanel(options: UseResizablePanelOptions) {
     getDefaultWidth,
     getMaxWidth,
     growthDirection,
-    maxWidth,
+    maxWidth = Number.POSITIVE_INFINITY,
     minWidth,
     storageKey,
     widthRef,
@@ -212,7 +212,8 @@ export function useResizablePanel(options: UseResizablePanelOptions) {
       commitWidth(minWidth, { forcePersist: true });
     } else if (event.key === "End") {
       event.preventDefault();
-      commitWidth(effectiveMaxWidth(), { forcePersist: true });
+      const maximum = effectiveMaxWidth();
+      if (Number.isFinite(maximum)) commitWidth(maximum, { forcePersist: true });
     } else if (event.key === "Enter") {
       event.preventDefault();
       resetWidth();
@@ -277,7 +278,9 @@ export function useResizablePanel(options: UseResizablePanelOptions) {
       "aria-label": ariaLabel,
       // A width separator is vertical; a height separator is horizontal.
       "aria-orientation": (axis === "x" ? "vertical" : "horizontal") as "vertical" | "horizontal",
-      "aria-valuemax": mounted ? effectiveMaxWidth() : maxWidth,
+      "aria-valuemax": Number.isFinite(mounted ? effectiveMaxWidth() : maxWidth)
+        ? (mounted ? effectiveMaxWidth() : maxWidth)
+        : undefined,
       "aria-valuemin": minWidth,
       "aria-valuenow": width,
       "aria-valuetext": `${width} px`,

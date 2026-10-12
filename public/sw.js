@@ -5,6 +5,9 @@ const OFFLINE_URL = "/offline.html";
 const PRECACHE_URLS = [
   OFFLINE_URL,
   "/manifest.webmanifest",
+  "/favicon.ico",
+  "/icons/pi-web.svg",
+  "/icons/pi-web-32.png",
   "/icons/icon-192.png",
   "/icons/icon-512.png",
   "/icons/apple-touch-icon.png",

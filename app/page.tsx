@@ -6,7 +6,7 @@ export default function Home() {
   return (
     <Suspense>
       <I18nProvider>
-        <AppShell />
+        <AppShell serverCwd={process.cwd()} />
       </I18nProvider>
     </Suspense>
   );
