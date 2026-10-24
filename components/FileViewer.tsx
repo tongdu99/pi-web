@@ -26,6 +26,8 @@ import { FrontmatterCard } from "./FrontmatterCard";
 import { parseUnifiedPatch } from "@/lib/patch";
 import type { GitFileDiffResponse } from "@/lib/git-types";
 import { useI18n } from "@/hooks/useI18n";
+import { FileAccessLinks } from "./FileAccessLinks";
+import { getFileViewerUrl } from "@/lib/file-viewer-links";
 import {
   resolveInitialFileDisplayMode,
   type FileViewerDisplayMode as DisplayMode,
@@ -268,22 +270,25 @@ function getFileApiUrl(
   return `/api/files/${encoded}?${searchParams.toString()}`;
 }
 
-function DownloadLink({ filePath, sourceSessionId }: { filePath: string; sourceSessionId?: string | null }) {
+function DownloadLink({ filePath, sourceSessionId, lineRange }: { filePath: string; sourceSessionId?: string | null; lineRange?: FileLineRange }) {
   const { t } = useI18n();
   return (
-    <a
-      href={getFileApiUrl(filePath, "download", sourceSessionId)}
-      download={getFileName(filePath)}
-      title={t("i18n.downloadFile")}
-      aria-label={t("i18n.downloadFile")}
-      className="file-viewer-icon-button"
-    >
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-        <polyline points="7 10 12 15 17 10" />
-        <line x1="12" y1="15" x2="12" y2="3" />
-      </svg>
-    </a>
+    <>
+      <FileAccessLinks filePath={filePath} sessionId={sourceSessionId} lineRange={lineRange} />
+      <a
+        href={getFileApiUrl(filePath, "download", sourceSessionId)}
+        download={getFileName(filePath)}
+        title={t("i18n.downloadFile")}
+        aria-label={t("i18n.downloadFile")}
+        className="file-viewer-icon-button"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+          <polyline points="7 10 12 15 17 10" />
+          <line x1="12" y1="15" x2="12" y2="3" />
+        </svg>
+      </a>
+    </>
   );
 }
 
@@ -1369,8 +1374,11 @@ function TextFileViewer({
 
   if (error && !isDeletedDiff) {
     return (
-      <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#f87171", fontSize: 13 }}>
-        {error}
+      <div style={{ height: "100%", display: "flex", flexDirection: "column", gap: 12, alignItems: "center", justifyContent: "center", fontSize: 13 }}>
+        <span style={{ color: "#f87171" }}>{error}</span>
+        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+          <DownloadLink filePath={filePath} sourceSessionId={sourceSessionId} lineRange={targetLineRange} />
+        </div>
       </div>
     );
   }
@@ -1506,7 +1514,7 @@ function TextFileViewer({
             )}
           </div>
 
-          {!isDeletedDiff && <DownloadLink filePath={filePath} sourceSessionId={sourceSessionId} />}
+          {!isDeletedDiff && <DownloadLink filePath={filePath} sourceSessionId={sourceSessionId} lineRange={targetLineRange} />}
         </div>
       </div>
 
@@ -1576,7 +1584,7 @@ function TextFileViewer({
                     onOpenFile(linkedFile.filePath, linkedFile.lineRange);
                   };
 
-                  return <a href={href} {...props} onClick={handleClick}>{children}</a>;
+                  return <a href={getFileViewerUrl(linkedFile.filePath, linkedFile.lineRange, sourceSessionId)} {...props} onClick={handleClick}>{children}</a>;
                 },
                 img({ src, alt, ...props }) {
                   delete props.node;

@@ -7,6 +7,7 @@ import { encodeFilePathForApi } from "@/lib/file-paths";
 import { markdownRehypePlugins, markdownRemarkPlugins, normalizeDisplayMath } from "@/lib/markdown";
 import { MermaidBlock, CodeBlock } from "./MermaidBlock";
 import { normalizeWebUrl } from "@/lib/web-url";
+import { getFileViewerUrl } from "@/lib/file-viewer-links";
 
 interface MarkdownBodyProps {
   children: string;
@@ -86,7 +87,7 @@ export function MarkdownBody({ children, className, isStreaming, cwd, onOpenFile
         else if (webUrl && onOpenUrl) onOpenUrl(webUrl);
       };
 
-      return <a href={href} {...props} onClick={handleClick}>{children}</a>;
+      return <a href={fileReference ? getFileViewerUrl(fileReference.filePath, fileReference.lineRange) : href} {...props} onClick={handleClick}>{children}</a>;
     },
     img({ src, alt, ...props }) {
       delete props.node;

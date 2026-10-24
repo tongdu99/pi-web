@@ -62,10 +62,10 @@ test("routes HTTP(S) links through the supplied right-panel callback", async () 
   assert.match(source, /else if \(webUrl && onOpenUrl\) onOpenUrl\(webUrl\)/);
 });
 
-test("keeps local file markdown links in the app", () => {
+test("gives local file links a browser URL while retaining the internal click handler", () => {
   const html = renderMarkdown("[file](components/MarkdownBody.tsx)");
 
-  assert.match(html, /<a href="components\/MarkdownBody\.tsx">file<\/a>/);
+  assert.match(html, /<a href="\/viewer\?path=%2Fhome%2Fme%2Fproject%2Fcomponents%2FMarkdownBody\.tsx">file<\/a>/);
   assert.doesNotMatch(html, /target=|rel=|\snode=/);
 });
 
@@ -78,7 +78,7 @@ test("opens only explicit code-reference links instead of guessing from text", (
   assert.doesNotMatch(plainHtml, /<a/);
   assert.match(
     linkedHtml,
-    /<a href="\/worktree\/product\/ReagentKitAccessImpl\.java#L42-L45">ReagentKitAccessImpl\.java:42-45<\/a>/,
+    /<a href="\/viewer\?path=%2Fworktree%2Fproduct%2FReagentKitAccessImpl\.java#L42-L45">ReagentKitAccessImpl\.java:42-45<\/a>/,
   );
 });
 
