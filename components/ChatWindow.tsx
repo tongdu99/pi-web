@@ -1509,6 +1509,7 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
                             message={streamState.streamingMessage as AgentMessage}
                             isStreaming
                             processingState="active"
+                            sessionId={session?.id ?? sessionIdRef.current ?? undefined}
                             toolResults={toolResultsMap}
                             modelNames={modelNames}
                             cwd={messageCwd}
@@ -1666,7 +1667,7 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
               </section>
             )}
             {!activeThread && !backgroundLiveDocRun && !showMainLiveProcessPanel && streamState.isStreaming && hasStreamingContent && streamState.streamingMessage && (
-              <MessageView message={streamState.streamingMessage as AgentMessage} isStreaming modelNames={modelNames} cwd={messageCwd} onOpenFile={onOpenFile} onOpenUrl={onOpenUrl} />
+              <MessageView message={streamState.streamingMessage as AgentMessage} isStreaming sessionId={session?.id ?? sessionIdRef.current ?? undefined} modelNames={modelNames} cwd={messageCwd} onOpenFile={onOpenFile} onOpenUrl={onOpenUrl} />
             )}
 
             {!activeThread && !backgroundLiveDocRun && !showMainLiveProcessPanel && agentRunning && !hasStreamingContent && agentPhase && (

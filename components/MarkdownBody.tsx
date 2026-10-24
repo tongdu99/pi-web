@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, type MouseEvent, type ReactNode } from "react";
+import { createContext, useContext, useMemo, type MouseEvent, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import { resolveLocalFileReference, type FileLineRange } from "@/lib/file-links";
 import { encodeFilePathForApi } from "@/lib/file-paths";
@@ -9,11 +9,15 @@ import { MermaidBlock, CodeBlock } from "./MermaidBlock";
 import { normalizeWebUrl } from "@/lib/web-url";
 import { getFileViewerUrl } from "@/lib/file-viewer-links";
 
+/** Session provenance for file references, including paths outside allowed project roots. */
+export const FileReferenceSessionContext = createContext<string | undefined>(undefined);
+
 interface MarkdownBodyProps {
   children: string;
   className?: string;
   isStreaming?: boolean;
   cwd?: string;
+  sourceSessionId?: string;
   onOpenFile?: (filePath: string, lineRange?: FileLineRange) => void;
   /** Opens an external HTTP(S) link in the app's web panel. */
   onOpenUrl?: (url: string) => void;
@@ -37,7 +41,9 @@ function blockAnchorKey(prefix: string | undefined, kind: string, node: unknown)
   return typeof offset === "number" ? `${prefix}:${kind}:${offset}` : undefined;
 }
 
-export function MarkdownBody({ children, className, isStreaming, cwd, onOpenFile, onOpenUrl, threadPanels, threadControls, blockKeyPrefix }: MarkdownBodyProps) {
+export function MarkdownBody({ children, className, isStreaming, cwd, sourceSessionId, onOpenFile, onOpenUrl, threadPanels, threadControls, blockKeyPrefix }: MarkdownBodyProps) {
+  const inheritedSessionId = useContext(FileReferenceSessionContext);
+  const sessionId = sourceSessionId ?? inheritedSessionId;
   const normalizedMarkdown = useMemo(() => normalizeDisplayMath(children), [children]);
   // Stable renderer identities keep stateful blocks mounted across message hover updates.
   const components = useMemo<Components>(() => ({
@@ -87,13 +93,13 @@ export function MarkdownBody({ children, className, isStreaming, cwd, onOpenFile
         else if (webUrl && onOpenUrl) onOpenUrl(webUrl);
       };
 
-      return <a href={fileReference ? getFileViewerUrl(fileReference.filePath, fileReference.lineRange) : href} {...props} onClick={handleClick}>{children}</a>;
+      return <a href={fileReference ? getFileViewerUrl(fileReference.filePath, fileReference.lineRange, sessionId) : href} {...props} onClick={handleClick}>{children}</a>;
     },
     img({ src, alt, ...props }) {
       delete props.node;
       const filePath = typeof src === "string" ? resolveLocalFileReference(src, cwd)?.filePath : null;
       const imageSrc = filePath
-        ? `/api/files/${encodeFilePathForApi(filePath)}?type=read`
+        ? `/api/files/${encodeFilePathForApi(filePath)}?${new URLSearchParams({ type: "read", ...(sessionId ? { sessionId } : {}) })}`
         : src;
       // Dynamic local paths are served directly by the file API.
       // eslint-disable-next-line @next/next/no-img-element
@@ -138,7 +144,7 @@ export function MarkdownBody({ children, className, isStreaming, cwd, onOpenFile
       const anchorKey = blockAnchorKey(blockKeyPrefix, "li", node);
       return <li {...props} {...(anchorKey ? { "data-thread-anchor": anchorKey } : {})}>{children}{anchorKey ? threadControls?.get(anchorKey) : null}{anchorKey ? threadPanels?.get(anchorKey) : null}</li>;
     },
-  }), [blockKeyPrefix, cwd, isStreaming, onOpenFile, onOpenUrl, threadControls, threadPanels]);
+  }), [blockKeyPrefix, cwd, isStreaming, onOpenFile, onOpenUrl, sessionId, threadControls, threadPanels]);
 
   return (
     <div className={["markdown-body", className].filter(Boolean).join(" ")}>

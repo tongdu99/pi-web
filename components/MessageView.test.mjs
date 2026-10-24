@@ -28,6 +28,20 @@ function renderMessage(message, props = {}) {
   );
 }
 
+test("file links and inline images retain the originating session across message types", () => {
+  const text = "[screenshot](/tmp/screenshot.png)\n\n![preview](/tmp/screenshot.png)";
+  const messages = [
+    { role: "user", content: text },
+    { role: "assistant", provider: "openai", model: "gpt-test", content: [{ type: "text", text }] },
+    { role: "custom", customType: "notice", content: text, display: true },
+  ];
+  for (const message of messages) {
+    const html = renderMessage(message, { sessionId: "source-session", onOpenFile() {} });
+    assert.match(html, /href="\/viewer\?path=%2Ftmp%2Fscreenshot.png&amp;sessionId=source-session"/);
+    assert.match(html, /src="\/api\/files\/tmp\/screenshot.png\?type=read&amp;sessionId=source-session"/);
+  }
+});
+
 test("keeps streamed tool input out of collapsed markup while counting it", () => {
   const block = {
     type: "toolCall",

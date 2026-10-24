@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, memo, useState, useRef, useEffect, useMemo, type ReactNode } from "react";
-import { MarkdownBody } from "./MarkdownBody";
+import { FileReferenceSessionContext, MarkdownBody } from "./MarkdownBody";
 import { ImagePreview } from "./ImagePreview";
 import { copyText } from "@/lib/clipboard";
 import { useI18n } from "@/hooks/useI18n";
@@ -271,7 +271,7 @@ function haveSameRelevantToolResults(
   return true;
 }
 
-export const MessageView = memo(function MessageView({ message, isStreaming, processingState, toolResults, modelNames, cwd, onOpenFile, onOpenChangedFile, onOpenUrl, entryId, onFork, forking, onNavigate, prevAssistantEntryId, onEditContent, onQuote, onDiscuss, discussionThreadPanels, liveDocs, defaultLiveDocId, onLiveDocTargetChange, onAddToLiveDoc, liveDocUpdateDisabled, showTimestamp, prevTimestamp, sessionId, writtenFiles }: Props) {
+function MessageViewContent({ message, isStreaming, processingState, toolResults, modelNames, cwd, onOpenFile, onOpenChangedFile, onOpenUrl, entryId, onFork, forking, onNavigate, prevAssistantEntryId, onEditContent, onQuote, onDiscuss, discussionThreadPanels, liveDocs, defaultLiveDocId, onLiveDocTargetChange, onAddToLiveDoc, liveDocUpdateDisabled, showTimestamp, prevTimestamp, sessionId, writtenFiles }: Props) {
   if (message.role === "user") {
     return <UserMessageView message={message as UserMessage} cwd={cwd} onOpenFile={onOpenFile} onOpenUrl={onOpenUrl} entryId={entryId} onFork={onFork} forking={forking} onNavigate={onNavigate} prevAssistantEntryId={prevAssistantEntryId} onEditContent={onEditContent} />;
   }
@@ -293,6 +293,14 @@ export const MessageView = memo(function MessageView({ message, isStreaming, pro
     return <BashExecutionView message={message as BashExecutionMessage} sessionId={sessionId} />;
   }
   return null;
+}
+
+export const MessageView = memo(function MessageView(props: Props) {
+  return (
+    <FileReferenceSessionContext.Provider value={props.sessionId}>
+      <MessageViewContent {...props} />
+    </FileReferenceSessionContext.Provider>
+  );
 }, (prev, next) => {
   return prev.message === next.message
     && prev.isStreaming === next.isStreaming

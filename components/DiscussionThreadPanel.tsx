@@ -245,6 +245,7 @@ export function DiscussionThreadPanel({
                   {streamingMessage && (
                     <MessageView
                       message={streamingMessage}
+                      sessionId={sessionId}
                       isStreaming
                       processingState="active"
                       toolResults={toolResults}
