@@ -11,7 +11,7 @@ async function json<T>(response: Response): Promise<T> {
   return body;
 }
 
-export function useLiveDocs(sessionId: string | null) {
+export function useLiveDocs(sessionId: string | null, liveDocInUse = false) {
   const [docs, setDocs] = useState<LiveDocSummary[]>([]);
   const [defaultDocId, setDefaultDocIdState] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -46,16 +46,18 @@ export function useLiveDocs(sessionId: string | null) {
   }, [refresh, sessionId]);
 
   useEffect(() => {
-    if (!sessionId) return;
+    // Idle session pages must not reserve an HTTP/1.1 connection for Live Docs.
+    if (!sessionId || !liveDocInUse) return;
     const source = new EventSource(`/api/live-docs/events?sessionId=${encodeURIComponent(sessionId)}`);
     source.onmessage = (event) => {
       try {
-        const payload = JSON.parse(event.data) as { type?: string };
-        if (payload.type !== "ready") void refresh();
-      } catch { /* ignore malformed event */ }
+        JSON.parse(event.data);
+      } catch { return; /* ignore malformed event */ }
+      // Refresh on `ready` too: changes may have happened while unsubscribed.
+      void refresh().catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
     };
     return () => source.close();
-  }, [refresh, sessionId]);
+  }, [liveDocInUse, refresh, sessionId]);
 
   const setDefaultDocId = useCallback((docId: string | null) => {
     setDefaultDocIdState(docId);

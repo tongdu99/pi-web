@@ -431,6 +431,10 @@ export function AppShell({ serverCwd }: { serverCwd: string }) {
   // Right panel — file, web, and Live Doc tabs
   const [fileTabs, setFileTabs] = useState<Tab[]>([]);
   const [activeFileTabId, setActiveFileTabId] = useState<string | null>(null);
+  const liveDocInUse = liveDocsFeatureEnabled && (
+    (rightPanelOpen && fileTabs.some((tab) => tab.id === activeFileTabId && tab.kind === "live-doc"))
+    || Boolean(liveDocTargetState)
+  );
   const {
     docs: liveDocs,
     defaultDocId,
@@ -439,7 +443,7 @@ export function AppShell({ serverCwd }: { serverCwd: string }) {
     updateSummary: updateLiveDocSummary,
     loading: liveDocsLoading,
     error: liveDocsError,
-  } = useLiveDocs(liveDocsFeatureEnabled ? selectedSession?.id ?? null : null);
+  } = useLiveDocs(liveDocsFeatureEnabled ? selectedSession?.id ?? null : null, liveDocInUse);
 
   const handleFileViewerStateChange = useCallback((
     tabId: string,
