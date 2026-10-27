@@ -3,7 +3,6 @@ import fs from "fs";
 import path from "path";
 import {
   getAllowedFileRoots,
-  isExistingFilePathAllowed,
   isFilePathAllowed,
   isWindowsAbsolutePath,
   normalizeSlashes,
@@ -19,7 +18,6 @@ import {
   getImageMime,
 } from "@/lib/file-types";
 import { resolveDirentIsDirectory } from "@/lib/file-dirent";
-import { isFilePathReferencedBySession } from "@/lib/session-file-references";
 import { isApiRequestAllowed } from "@/lib/request-security";
 import {
   inspectUploadTargets,
@@ -85,9 +83,12 @@ async function getUploadDirectory(segments: string[]): Promise<
   { directory: string } | { response: NextResponse }
 > {
   const directory = filePathFromSegments(segments);
+  // Reads are open (local single-user tool), but writes only land in a project
+  // root pi-web knows about: session cwds, their project roots, and roots
+  // explicitly added through cwd selection or worktree creation.
   const allowedRoots = await getAllowedFileRoots();
   if (!isFilePathAllowed(directory, allowedRoots)) {
-    return { response: NextResponse.json({ error: "Access denied" }, { status: 403 }) };
+    return { response: NextResponse.json({ error: "Uploads are limited to project directories" }, { status: 403 }) };
   }
 
   let stat: fs.Stats;
@@ -100,8 +101,8 @@ async function getUploadDirectory(segments: string[]): Promise<
     return { response: NextResponse.json({ error: "Upload target is not a directory" }, { status: 400 }) };
   }
 
-  // A browsable directory can be a symlink. Resolve both sides before writes
-  // so a symlink inside an allowed root cannot redirect uploads outside it.
+  // A project directory can be a symlink. Resolve both sides before writing so
+  // a symlink inside an allowed root cannot redirect uploads outside it.
   const realDirectory = fs.realpathSync(directory);
   const realRoots = new Set<string>();
   for (const root of allowedRoots) {
@@ -112,7 +113,7 @@ async function getUploadDirectory(segments: string[]): Promise<
     }
   }
   if (!isFilePathAllowed(realDirectory, realRoots)) {
-    return { response: NextResponse.json({ error: "Access denied" }, { status: 403 }) };
+    return { response: NextResponse.json({ error: "Uploads are limited to project directories" }, { status: 403 }) };
   }
 
   return { directory: realDirectory };
@@ -311,7 +312,7 @@ function streamFile(filePath: string, stat: fs.Stats, contentType: string, range
   // <img> preview embedding ignores them.
   if (contentType === "image/svg+xml") {
     headers["Content-Security-Policy"] =
-      "default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'";
+      "default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'";
     headers["Referrer-Policy"] = "no-referrer";
   }
 
@@ -435,18 +436,8 @@ export async function GET(
     if (!type) {
       return NextResponse.json({ error: "Invalid file request type" }, { status: 400 });
     }
-    const sessionId = request.nextUrl.searchParams.get("sessionId");
-
-    const allowedRoots = await getAllowedFileRoots();
-    const allowedByRoot = isFilePathAllowed(filePath, allowedRoots);
-    const allowedBySessionReference =
-      !allowedByRoot &&
-      type !== "list" &&
-      await isFilePathReferencedBySession(filePath, sessionId);
-    if (!allowedByRoot && !allowedBySessionReference) {
-      return NextResponse.json({ error: "Access denied" }, { status: 403 });
-    }
-
+    // No path allow-list: pi-web is a local, single-user tool guarded by the
+    // host/origin checks (and optional password) in proxy.ts.
     let stat: fs.Stats | undefined;
     try {
       stat = fs.statSync(filePath);
@@ -454,14 +445,6 @@ export async function GET(
       if (type !== "watch") {
         return NextResponse.json({ error: "Not found" }, { status: 404 });
       }
-    }
-
-    const existingAuthorizationPath = stat ? filePath : path.dirname(filePath);
-    if (
-      !allowedBySessionReference
-      && !isExistingFilePathAllowed(existingAuthorizationPath, allowedRoots)
-    ) {
-      return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
     if (type === "read") {
@@ -538,7 +521,7 @@ export async function GET(
         headers: {
           "Content-Type": "text/html; charset=utf-8",
           "Cache-Control": "no-cache",
-          "Content-Security-Policy": "default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'",
+          "Content-Security-Policy": "default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'",
           "Referrer-Policy": "no-referrer",
           "X-Content-Type-Options": "nosniff",
         },

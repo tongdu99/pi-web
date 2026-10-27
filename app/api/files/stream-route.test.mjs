@@ -20,7 +20,9 @@ test("inline SVG is served with a script-blocking content security policy", () =
   assert.match(streamBlock, /Content-Security-Policy/);
   assert.match(streamBlock, /default-src 'none'/);
   assert.match(streamBlock, /style-src 'unsafe-inline'/);
-  assert.match(streamBlock, /frame-ancestors 'self'/);
+  // Previews are embeddable anywhere (the standalone viewer embeds them); the
+  // CSP only stops a repo-controlled file from running script.
+  assert.doesNotMatch(streamBlock, /frame-ancestors/);
 });
 
 test("the restrictive headers are applied to every streamFile response shape", () => {

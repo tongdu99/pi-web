@@ -177,8 +177,10 @@ Newer pi emits `compaction_start` / `compaction_end`; older versions emitted `au
 - git prints POSIX-style absolute paths even on Windows, so every path read out of git goes through `toNativePath()` (`lib/paths.ts`) before it is compared or returned. Compare paths with `samePath()`, never `===` — raw equality made `isTopLevel` permanently false on Windows and hid the worktree switcher entirely. Branch names are not paths and must keep their forward slashes. Browser code cannot apply Node path rules, so `/api/worktrees` resolves `currentWorktreePath` server-side; the sidebar must use that identity for highlighting and removal fallback.
 
 ### File access allow-list
-- `/api/files` is intentionally not a general filesystem browser. Allowed roots come from session cwds, their resolved project roots, `~/pi-cwd-*`, and roots explicitly added with `allowFileRoot()`.
-- `/api/cwd/validate`, `/api/default-cwd`, and `/api/worktrees` call `allowFileRoot()` when they make a new location browsable.
+- **Reads are open.** `GET /api/files` (read, list, download, meta, preview, watch) and the standalone `/viewer` have no path allow-list: pi-web is a local single-user tool, and anyone who can reach its API can already read any file through the agent. The host/origin checks and optional password in `proxy.ts` are the boundary.
+- **The viewer is embeddable anywhere.** `/viewer` and the previews it nests send no `frame-ancestors`; they are read-only and never message their parent. Their CSP still blocks script from repo-controlled HTML/SVG.
+- **Writes are limited.** `POST /api/files` uploads only into allowed roots (checked on both the requested and symlink-resolved path). Allowed roots come from session cwds, their resolved project roots, `~/pi-cwd-*`, and roots explicitly added with `allowFileRoot()`. Routes that act on a `cwd` (git, worktrees, skills, plugins, models, project trust, file index) also require an allowed root, because they run git, install packages, or load project code there.
+- `/api/cwd/validate`, `/api/default-cwd`, and `/api/worktrees` call `allowFileRoot()` when they make a new location usable.
 - Allowed roots are stored slash-normalized, but that is a Set-key convention, not a correctness requirement: `isPathWithinRoots()` (`lib/path-security.ts`, the single implementation behind `isFilePathAllowed()`) re-resolves and case-folds both sides, so either path form authorizes correctly. Keep that one implementation — it is the security boundary.
 
 ### Plugins and skills

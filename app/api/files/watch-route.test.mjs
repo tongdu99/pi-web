@@ -17,10 +17,19 @@ test("file watching survives same-path replacement", () => {
   assert.match(watchBlock, /lastExists/);
 });
 
-test("a missing target can be watched after its parent is authorized", () => {
+test("a missing target can still be watched", () => {
+  // Reads (including watch) have no path allow-list; a not-yet-created file is
+  // watched through its parent directory instead of failing with Not found.
   assert.match(source, /if \(type !== "watch"\)[\s\S]*error: "Not found"/);
-  assert.match(source, /const existingAuthorizationPath = stat \? filePath : path\.dirname\(filePath\)/);
   assert.match(watchBlock, /lastExists = stat !== undefined/);
+});
+
+test("reads have no path allow-list, but uploads are limited to project roots", () => {
+  const get = source.slice(source.indexOf("export async function GET"));
+  assert.doesNotMatch(get, /getAllowedFileRoots|isFilePathAllowed|Access denied/);
+  const upload = source.slice(source.indexOf("async function getUploadDirectory"), source.indexOf("function parseUploadFileNames"));
+  assert.match(upload, /isFilePathAllowed\(directory, allowedRoots\)/);
+  assert.match(upload, /isFilePathAllowed\(realDirectory, realRoots\)/);
 });
 
 test("connected is emitted only after the watcher exists", () => {
