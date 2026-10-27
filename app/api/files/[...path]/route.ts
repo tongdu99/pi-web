@@ -54,7 +54,7 @@ const EXT_TO_LANGUAGE: Record<string, string> = {
   sh: "bash", bash: "bash", zsh: "bash", fish: "bash",
   sql: "sql", graphql: "graphql", gql: "graphql",
   dockerfile: "dockerfile", tf: "hcl", hcl: "hcl",
-  env: "bash", gitignore: "bash", txt: "text",
+  env: "bash", gitignore: "bash", txt: "text", log: "log",
   pdf: "pdf", docx: "word",
 };
 
@@ -64,6 +64,8 @@ function getLanguage(filePath: string): string {
   if (base === "dockerfile" || base.startsWith("dockerfile.")) return "dockerfile";
   if (base === ".env" || base.startsWith(".env.")) return "bash";
   if (base === "makefile" || base === "gnumakefile") return "makefile";
+  // Rotated logs: app.log.1, app.log.2026-05-01
+  if (/\.log(?:\.\d[\w-]*)?$/.test(base)) return "log";
   const ext = base.split(".").pop() ?? "";
   return EXT_TO_LANGUAGE[ext] ?? "text";
 }
@@ -467,10 +469,19 @@ export async function GET(
         return streamFile(filePath, stat, documentMime, request.headers.get("range"));
       }
       if (stat.size > TEXT_PREVIEW_MAX_BYTES) {
-        return NextResponse.json({ error: "File too large for preview (>256KB)" }, { status: 413 });
+        return NextResponse.json({
+          error: `File too large for preview (>${TEXT_PREVIEW_MAX_BYTES / (1024 * 1024)}MB)`,
+        }, { status: 413 });
+      }
+      const language = getLanguage(filePath);
+      // The in-app viewer renders through React and asks for a smaller cap.
+      // Larger files are reported (not read) so it can embed the lightweight
+      // standalone viewer instead.
+      const maxBytes = Number(request.nextUrl.searchParams.get("maxBytes"));
+      if (Number.isFinite(maxBytes) && maxBytes > 0 && stat.size > maxBytes) {
+        return NextResponse.json({ tooLarge: true, language, size: stat.size });
       }
       const content = fs.readFileSync(filePath, "utf-8");
-      const language = getLanguage(filePath);
       return NextResponse.json({ content, language, size: stat.size });
     }
 

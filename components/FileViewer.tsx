@@ -12,6 +12,7 @@ import ReactMarkdown from "react-markdown";
 import { useTheme } from "@/hooks/useTheme";
 import {
   DOCX_PREVIEW_MAX_BYTES,
+  IN_APP_SOURCE_MAX_BYTES,
   getFileExt,
   isAudioPath,
   isDocumentPreviewPath,
@@ -57,6 +58,27 @@ interface FileData {
   content: string;
   language: string;
   size: number;
+  /**
+   * Above IN_APP_SOURCE_MAX_BYTES the content is not fetched: React rendering
+   * of tens of thousands of lines freezes the tab, so the source view embeds
+   * the standalone /viewer page (server-rendered, off-screen lines skipped).
+   */
+  large?: boolean;
+}
+
+/** Same-origin standalone viewer for files too large to render in React. */
+function getEmbeddedSourceViewerUrl(
+  filePath: string,
+  sourceSessionId: string | null | undefined,
+  isDark: boolean,
+  lineRange?: FileLineRange,
+): string {
+  const params = new URLSearchParams({ path: filePath, view: "source", embed: "1", theme: isDark ? "dark" : "light" });
+  if (sourceSessionId) params.set("sessionId", sourceSessionId);
+  const fragment = lineRange
+    ? `#L${lineRange.startLine}${lineRange.endLine !== lineRange.startLine ? `-L${lineRange.endLine}` : ""}`
+    : "";
+  return `/viewer?${params.toString()}${fragment}`;
 }
 
 interface FileViewerCacheEntry {
@@ -1047,6 +1069,11 @@ function TextFileViewer({
   const [displayMode, setDisplayMode] = useState<DisplayMode>(requestedInitialDisplayMode);
   const [wrapLines, setWrapLines] = useState(initialWrapLines);
   const [watching, setWatching] = useState(false);
+  // Large files are not re-rendered on every write (a growing log would reload
+  // megabytes per line); changes surface as a Reload button instead.
+  const [fileChangeCount, setFileChangeCount] = useState(0);
+  const [largeLoadedChangeCount, setLargeLoadedChangeCount] = useState(0);
+  const [largeFrameLoaded, setLargeFrameLoaded] = useState(false);
   const esRef = useRef<EventSource | null>(null);
   const contentRequestRef = useRef(0);
   const gitDiffRequestRef = useRef(0);
@@ -1108,18 +1135,21 @@ function TextFileViewer({
 
   const fetchContent = useCallback((filePath: string) => {
     const requestId = ++contentRequestRef.current;
-    return fetch(getFileApiUrl(filePath, "read", sourceSessionId))
+    return fetch(getFileApiUrl(filePath, "read", sourceSessionId, { maxBytes: IN_APP_SOURCE_MAX_BYTES }))
       .then((r) => r.json())
-      .then((d: FileData & { error?: string }) => {
+      .then((d: FileData & { error?: string; tooLarge?: boolean }) => {
         if (requestId !== contentRequestRef.current) return null;
         if (d.error) {
           setError(d.error);
           return null;
         }
+        const next: FileData = d.tooLarge
+          ? { content: "", language: d.language, size: d.size, large: true }
+          : d;
         setError(null);
-        setData(d);
-        updateCachedFileViewer(cacheKey, { data: d });
-        return d;
+        setData(next);
+        updateCachedFileViewer(cacheKey, { data: next });
+        return next;
       })
       .catch((e) => {
         if (requestId !== contentRequestRef.current) return null;
@@ -1216,6 +1246,7 @@ function TextFileViewer({
     });
 
     es.addEventListener("change", synchronize);
+    es.addEventListener("change", () => setFileChangeCount((count) => count + 1));
 
     const markDisconnected = () => {
       setWatching(false);
@@ -1387,12 +1418,15 @@ function TextFileViewer({
 
   const language = data?.language ?? "text";
   const content = data?.content ?? "";
+  const isLarge = data?.large === true;
   const isHtml = language === "html";
   const isMarkdown = language === "markdown";
-  const hasPreview = isHtml || isMarkdown;
+  const hasPreview = (isHtml || isMarkdown) && !isLarge;
   const markdownDirectory = getFileDirectory(filePath);
-  const lines = content.split("\n");
-  const effectiveDisplayMode = isDeletedDiff ? "diff" : displayMode;
+  const lines = isLarge ? null : content.split("\n");
+  const effectiveDisplayMode = isDeletedDiff
+    ? "diff"
+    : displayMode === "preview" && !hasPreview ? "source" : displayMode;
   const displayModes: DisplayMode[] = isDeletedDiff
     ? ["diff"]
     : [
@@ -1402,7 +1436,10 @@ function TextFileViewer({
       ];
   const metadata = isDeletedDiff
     ? t("files.deleted")
-    : `${language} · ${lines.length} lines · ${formatSize(data!.size)}`;
+    : lines
+      ? `${language} · ${lines.length} lines · ${formatSize(data!.size)}`
+      : `${language} · ${formatSize(data!.size)}`;
+  const largeStale = isLarge && fileChangeCount !== largeLoadedChangeCount;
 
   return (
     <div className="file-viewer-shell" style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
@@ -1489,7 +1526,21 @@ function TextFileViewer({
                 <MentionIcon />
               </button>
             )}
-            {effectiveDisplayMode === "source" && (
+            {largeStale && (
+              <button
+                type="button"
+                onClick={() => {
+                  setLargeFrameLoaded(false);
+                  setLargeLoadedChangeCount(fileChangeCount);
+                }}
+                title={t("i18n.fileChangedReload")}
+                className="file-viewer-mode-button"
+                style={{ color: "var(--accent)" }}
+              >
+                {t("i18n.reload")}
+              </button>
+            )}
+            {effectiveDisplayMode === "source" && !isLarge && (
               <>
                 <button
                   type="button"
@@ -1530,6 +1581,21 @@ function TextFileViewer({
       >
         {effectiveDisplayMode === "diff" && hasGitDiff ? (
           <DiffView patch={gitDiff.patch!} />
+        ) : isLarge ? (
+          <div style={{ position: "relative", width: "100%", height: "100%" }}>
+            {!largeFrameLoaded && (
+              <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: 13 }}>
+                {t("i18n.loading")}
+              </div>
+            )}
+            <iframe
+              key={largeLoadedChangeCount}
+              src={getEmbeddedSourceViewerUrl(filePath, sourceSessionId, isDark, targetLineRange)}
+              title={getFileName(filePath)}
+              onLoad={() => setLargeFrameLoaded(true)}
+              style={{ display: "block", width: "100%", height: "100%", border: "none", background: "var(--bg)" }}
+            />
+          </div>
         ) : isHtml && effectiveDisplayMode === "preview" ? (
           <iframe
             srcDoc={content}

@@ -382,6 +382,8 @@ export const enLocale: LocalePlugin = {
     "i18n.diff": "Diff",
     "i18n.downloadFile": "Download file",
     "i18n.liveSync": "Live sync active",
+    "i18n.fileChangedReload": "File changed — reload",
+    "i18n.reload": "Reload",
     "i18n.notWatching": "Not watching",
     "i18n.fileViewMode": "File view mode",
     "i18n.compareHead": "Compare working tree with HEAD",

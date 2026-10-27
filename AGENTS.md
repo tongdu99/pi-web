@@ -183,6 +183,12 @@ Newer pi emits `compaction_start` / `compaction_end`; older versions emitted `au
 - `/api/cwd/validate`, `/api/default-cwd`, and `/api/worktrees` call `allowFileRoot()` when they make a new location usable.
 - Allowed roots are stored slash-normalized, but that is a Set-key convention, not a correctness requirement: `isPathWithinRoots()` (`lib/path-security.ts`, the single implementation behind `isFilePathAllowed()`) re-resolves and case-folds both sides, so either path form authorizes correctly. Keep that one implementation — it is the security boundary.
 
+### Large text files in the viewers
+- Text reads are capped at `TEXT_PREVIEW_MAX_BYTES` (20 MB). The in-app `FileViewer` renders through React and freezes the tab on tens of thousands of lines, so it requests `read` with `maxBytes=IN_APP_SOURCE_MAX_BYTES` (256 KB); larger files return `{ tooLarge: true }` without being read and are shown by embedding `/viewer?view=source&embed=1&theme=…`.
+- `/viewer` renders lines server-side in `content-visibility: auto` chunks (≈10x faster for big files — never remove it). Code is highlighted with refractor only up to `SOURCE_HIGHLIGHT_MAX_BYTES`; `.log` files use the linear tokenizer in `lib/source-highlight.ts` at any size.
+- `/viewer` redirects markdown to `/viewer/preview` unless the URL has a `#L…` fragment or `view=source`.
+- Git diffs keep their own `GIT_DIFF_MAX_BYTES` (256 KB) limit.
+
 ### Plugins and skills
 - `/api/plugins` uses pi's `SettingsManager` + `DefaultPackageManager` for global/project package install, remove, update, enable, and disable. Disabling writes empty `extensions/skills/prompts/themes` arrays for that package entry.
 - `/api/skills` uses `DefaultResourceLoader` so settings paths, package skills, and project `.agents/skills` are listed the same way the runtime sees them.

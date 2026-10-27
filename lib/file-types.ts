@@ -1,4 +1,15 @@
-export const TEXT_PREVIEW_MAX_BYTES = 256 * 1024;
+/** Largest text file the viewers will load (large logs are the main use). */
+export const TEXT_PREVIEW_MAX_BYTES = 20 * 1024 * 1024;
+/** Above this size, code is shown without Prism grammar highlighting (logs still use the fast log highlighter). */
+export const SOURCE_HIGHLIGHT_MAX_BYTES = 512 * 1024;
+/**
+ * The in-app viewer renders source through React; above this size it embeds
+ * the standalone /viewer page instead. Matches the old text limit, so files
+ * that opened before render exactly as before.
+ */
+export const IN_APP_SOURCE_MAX_BYTES = 256 * 1024;
+/** Git diffs are computed in-process; keep them on small files. */
+export const GIT_DIFF_MAX_BYTES = 256 * 1024;
 export const IMAGE_PREVIEW_MAX_BYTES = 10 * 1024 * 1024;
 export const DOCX_PREVIEW_MAX_BYTES = 10 * 1024 * 1024;
 

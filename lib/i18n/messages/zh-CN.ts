@@ -382,6 +382,8 @@ export const zhCNLocale: LocalePlugin = {
     "i18n.diff": "Diff",
     "i18n.downloadFile": "下载文件",
     "i18n.liveSync": "实时同步已启用",
+    "i18n.fileChangedReload": "文件已更改 — 重新加载",
+    "i18n.reload": "重新加载",
     "i18n.notWatching": "未监视",
     "i18n.fileViewMode": "文件视图模式",
     "i18n.compareHead": "比较工作区与 HEAD",

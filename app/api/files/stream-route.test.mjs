@@ -31,3 +31,12 @@ test("the restrictive headers are applied to every streamFile response shape", (
   const firstReturn = streamBlock.indexOf("createFileBodyStream", headerObject);
   assert.ok(headerObject !== -1 && firstReturn > headerObject, "headers must be built before any response");
 });
+
+test("in-app reads report oversized text files before reading them", () => {
+  // The in-app viewer passes maxBytes and embeds /viewer for larger files;
+  // reading 20 MB just to discard it would defeat the size check.
+  const maxBytesCheck = source.indexOf('searchParams.get("maxBytes")');
+  const tooLarge = source.indexOf("tooLarge: true", maxBytesCheck);
+  const textRead = source.indexOf('fs.readFileSync(filePath, "utf-8")', maxBytesCheck);
+  assert.ok(maxBytesCheck !== -1 && tooLarge > maxBytesCheck && textRead > tooLarge);
+});

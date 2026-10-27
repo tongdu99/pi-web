@@ -2,7 +2,7 @@ import { execFile } from "child_process";
 import fs from "fs";
 import path from "path";
 import { promisify } from "util";
-import { TEXT_PREVIEW_MAX_BYTES } from "./file-types";
+import { GIT_DIFF_MAX_BYTES } from "./file-types";
 import type {
   GitFileDiffResponse,
   GitFileStatus,
@@ -113,7 +113,7 @@ async function readTrackedLineStats(
 function countUntrackedTextLines(filePath: string): number {
   try {
     const stat = fs.lstatSync(filePath);
-    if (!stat.isFile() || stat.size > TEXT_PREVIEW_MAX_BYTES) return 0;
+    if (!stat.isFile() || stat.size > GIT_DIFF_MAX_BYTES) return 0;
     const content = fs.readFileSync(filePath);
     if (hasNullByte(content) || content.length === 0) return 0;
     const text = content.toString("utf8");
@@ -203,7 +203,7 @@ async function createTrackedFilePatch(
       "HEAD",
       "--",
       ...paths,
-    ], TEXT_PREVIEW_MAX_BYTES * 4);
+    ], GIT_DIFF_MAX_BYTES * 4);
   } catch {
     return null;
   }
@@ -232,7 +232,7 @@ export async function getGitFileDiff(cwd: string, filePath: string): Promise<Git
   } catch {
     return { supported: false };
   }
-  if (!stat.isFile() || stat.size > TEXT_PREVIEW_MAX_BYTES) return { supported: false };
+  if (!stat.isFile() || stat.size > GIT_DIFF_MAX_BYTES) return { supported: false };
 
   const currentBuffer = fs.readFileSync(resolvedFilePath);
   if (hasNullByte(currentBuffer)) return { supported: false };

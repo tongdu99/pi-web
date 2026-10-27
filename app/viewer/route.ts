@@ -2,8 +2,12 @@ import { randomBytes } from "node:crypto";
 import { NextRequest } from "next/server";
 import { GET as readFile } from "@/app/api/files/[...path]/route";
 import { resolveLocalFilePath } from "@/lib/file-links";
-import { getViewerFileApiUrl, renderFileViewerHtml } from "@/lib/file-viewer-html";
+import { getViewerFileApiUrl, renderFileViewerHtml, type FileViewerTheme } from "@/lib/file-viewer-html";
 import { isAudioPath, isDocumentPreviewPath, isImagePath } from "@/lib/file-types";
+
+function parseTheme(value: string | null): FileViewerTheme | undefined {
+  return value === "light" || value === "dark" ? value : undefined;
+}
 
 export async function GET(request: NextRequest) {
   const filePath = resolveLocalFilePath(request.nextUrl.searchParams.get("path") ?? undefined);
@@ -20,6 +24,11 @@ export async function GET(request: NextRequest) {
   return new Response(renderFileViewerHtml({
     filePath, sessionId, nonce,
     content: response.ok && !media ? data.content : undefined,
+    language: response.ok && !media ? data.language : undefined,
+    size: response.ok && !media ? data.size : undefined,
+    forceSource: request.nextUrl.searchParams.get("view") === "source",
+    theme: parseTheme(request.nextUrl.searchParams.get("theme")),
+    embedded: request.nextUrl.searchParams.get("embed") === "1",
     error: response.ok ? undefined : data.error || "Unable to read file",
   }), {
     status: response.status,

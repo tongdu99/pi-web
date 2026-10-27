@@ -56,7 +56,7 @@ test("TextFileViewer snapshots and restores lightweight tab state", () => {
 test("TextFileViewer restores cached content and diffs for inactive tabs", () => {
   const block = functionBlock("TextFileViewer", null);
   assert.match(block, /initialCacheRef = useRef\(getCachedFileViewer\(cacheKey\)\)/);
-  assert.match(block, /updateCachedFileViewer\(cacheKey, \{ data: d \}\)/);
+  assert.match(block, /updateCachedFileViewer\(cacheKey, \{ data: next \}\)/);
   assert.match(block, /if \(!initialCacheRef\.current\) synchronize\(\)/);
   assert.match(block, /if \(!refreshRequested && getCachedFileViewer\(cacheKey\)\?\.gitDiffResolved\) return/);
 });

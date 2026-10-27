@@ -56,3 +56,35 @@ test("read errors keep file access links without rendering media or source", () 
   assert.doesNotMatch(html, /<iframe/);
   assert.match(html, />Open<\/a>/);
 });
+
+test("markdown opens the rendered preview unless a line fragment or source view is requested", () => {
+  const html = render({ filePath: "/work/a.md", content: "# Title" });
+  const script = /<head>.*?<script nonce="test-nonce">([\s\S]*?)<\/script>/s.exec(html)[1];
+  const run = (hash) => {
+    let replaced = null;
+    vm.runInNewContext(script, { location: { hash, replace(url) { replaced = url; } } });
+    return replaced;
+  };
+  assert.equal(run(""), "/viewer/preview?path=%2Fwork%2Fa.md");
+  assert.equal(run("#L12"), null);
+  assert.doesNotMatch(render({ filePath: "/work/a.md", forceSource: true }), /location\.replace/);
+  assert.doesNotMatch(render(), /location\.replace/);
+});
+
+test("source is syntax highlighted and grouped into skippable chunks", () => {
+  const html = render({ content: "const a = 1;", language: "typescript" });
+  assert.match(html, /<span class=keyword>const<\/span>/);
+  assert.match(html, /<div class="chunk" style="contain-intrinsic-block-size:auto 20\.8px">/);
+  const logHtml = render({ filePath: "/work/app.log", content: "INFO ready", language: "log", size: 50 * 1024 * 1024 });
+  assert.match(logHtml, /<span class="level info">INFO<\/span>/);
+  const big = render({ content: "const a = 1;", language: "typescript", size: 10 * 1024 * 1024 });
+  assert.doesNotMatch(big, /class=keyword/);
+});
+
+test("embedded viewer drops its header and can force the app theme", () => {
+  const html = render({ embedded: true, theme: "dark" });
+  assert.doesNotMatch(html, /<header>/);
+  assert.match(html, /:root\{color-scheme:dark;--bg:#181818/);
+  assert.doesNotMatch(html, /prefers-color-scheme/);
+  assert.match(render(), /prefers-color-scheme:dark/);
+});
