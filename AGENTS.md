@@ -78,6 +78,7 @@ lib/
   pi-types.ts          local structural types for pi SDK objects
   rpc-manager.ts      AgentSessionWrapper + registry + startRpcSession
   session-reader.ts   SessionManager wrappers + path cache + buildSessionContext adapter
+  session-list-index.ts  persisted append-aware index behind listAllSessions()
   tool-presets.ts     PRESET_NONE/READ_ONLY/DEFAULT/FULL + getPresetFromTools()
   tool-preset-preference.ts  browser-persisted default for fresh sessions
   types.ts            shared TypeScript types
@@ -137,6 +138,9 @@ The client follows via `case "session_switch"` in `useAgentSession` → `onSessi
 
 ### Session files can be fully rewritten
 `parentSession` in the header is **display metadata only** — has zero effect on chat content. Safe to `writeFileSync` the entire file (pi does this itself during migrations). Used when cascade-reparenting children on delete.
+
+### Session list is an append-aware index, not a full scan
+`listAllSessions()` does **not** call `SessionManager.listAll()` (which parses every `.jsonl` in full on every scan). `lib/session-list-index.ts` parses each file once, then reads only bytes appended since the last scan; unchanged files cost one `stat()`. The index persists in `<agentDir>/pi-web/session-list-index.json`, so restarts don't re-read transcripts. Rewrites (inode change, shrink, changed header bytes, changed bytes before the resume offset) re-parse that one file. Its fields must stay identical to the SDK's `buildSessionInfo()` — `session-list-index.test.mjs` asserts parity against `SessionManager.listAll()`.
 
 ### ToolCall field normalization
 Pi stores toolCall blocks as `{type:"toolCall", id, name, arguments}` but `ToolCallContent` uses `{toolCallId, toolName, input}`. `normalizeToolCalls()` in `lib/normalize.ts` handles this — called in both `session-reader.ts` (file load) and `ChatWindow.handleAgentEvent()` (streaming).
