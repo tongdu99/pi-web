@@ -12,6 +12,7 @@ interface Props {
 
 interface NativeWebViewElement extends HTMLElement {
   getURL(): string;
+  getTitle(): string;
   reload(): void;
   src: string;
 }
@@ -49,13 +50,27 @@ function NativeWebPanel({ url, onNavigate, webviewRef }: NativeWebPanelProps) {
       const currentUrl = normalizeWebUrl(webview.getURL());
       if (!currentUrl) return;
       expectedUrlRef.current = currentUrl;
+      // The previous document's title may still be available during navigation.
+      // Use the URL temporarily until the new document publishes its title.
       onNavigate(currentUrl, getWebUrlLabel(currentUrl));
     };
+    const syncTitle = () => {
+      const currentUrl = normalizeWebUrl(webview.getURL());
+      if (!currentUrl) return;
+      expectedUrlRef.current = currentUrl;
+      onNavigate(currentUrl, webview.getTitle().trim() || getWebUrlLabel(currentUrl));
+    };
     webview.addEventListener("did-navigate", syncLocation);
-    webview.addEventListener("did-navigate-in-page", syncLocation);
+    webview.addEventListener("did-navigate-in-page", syncTitle);
+    webview.addEventListener("page-title-updated", syncTitle);
+    webview.addEventListener("dom-ready", syncTitle);
+    webview.addEventListener("did-finish-load", syncTitle);
     return () => {
       webview.removeEventListener("did-navigate", syncLocation);
-      webview.removeEventListener("did-navigate-in-page", syncLocation);
+      webview.removeEventListener("did-navigate-in-page", syncTitle);
+      webview.removeEventListener("page-title-updated", syncTitle);
+      webview.removeEventListener("dom-ready", syncTitle);
+      webview.removeEventListener("did-finish-load", syncTitle);
     };
   }, [onNavigate, webviewRef]);
 
